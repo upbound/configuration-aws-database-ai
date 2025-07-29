@@ -15,7 +15,7 @@ _items = [
                         parameters = {
                             autoGeneratePassword = True
                             engine = "mariadb"
-                            engineVersion = "10.11.6"
+                            engineVersion = "10.11"
                             networkRef = {
                                 id = "configuration-aws-database"
                             }
@@ -62,7 +62,7 @@ _items = [
                                 matchControllerRef = True
                             }
                             engine = "mariadb"
-                            engineVersion = "10.11.6"
+                            engineVersion = "10.11"
                             instanceClass = "db.t3.micro"
                             passwordSecretRef = {
                                 key = "password"

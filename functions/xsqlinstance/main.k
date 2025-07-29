@@ -4,7 +4,6 @@ import models.io.upbound.platform.aws.v1alpha1 as platformawsv1alpha1
 import base64
 
 oxr = platformawsv1alpha1.XSQLInstance{**option("params").oxr} # observed composite resource
-#oxr = option("params").oxr # observed composite resource
 ocds = option("params").ocds # observed composite resource
 oxrParams = oxr.spec.parameters
 
@@ -43,6 +42,7 @@ _items = [
                 dbName = "upbound"
                 dbSubnetGroupNameSelector.matchControllerRef = True
                 instanceClass = "db.t3.micro"
+                identifier = oxr.metadata.name
                 publiclyAccessible = False
                 skipFinalSnapshot = True
                 username = "masteruser"

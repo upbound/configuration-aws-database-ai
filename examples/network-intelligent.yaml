@@ -1,0 +1,8 @@
+apiVersion: aws.platform.upbound.io/v1alpha1
+kind: XNetwork
+metadata:
+  name: intelligent-aws-database-yury
+spec:
+  parameters:
+    id: intelligent-aws-database-yury
+    region: us-west-2

@@ -88,3 +88,24 @@ spec:
                     - passwordSecretRef
               required:
                 - parameters
+            status:
+              type: object
+              properties:
+                performanceMetrics:
+                  type: object
+                  description: Performance metrics from CloudWatch for this RDS instance
+                  x-kubernetes-preserve-unknown-fields: true
+                claudeDecision:
+                  type: object
+                  description: AI-driven scaling decision analysis from Claude
+                  properties:
+                    reasoning:
+                      type: string
+                      description: Detailed reasoning for the scaling decision
+                    timestamp:
+                      type: string
+                      format: date-time
+                      description: When the decision was made
+                  required:
+                  - reasoning
+                  - timestamp

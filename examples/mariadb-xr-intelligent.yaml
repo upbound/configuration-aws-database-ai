@@ -1,9 +1,13 @@
 apiVersion: aws.platform.upbound.io/v1alpha1
 kind: XSQLInstance
 metadata:
-  name: configuration-aws-database-mariadb
+  name: intelligent-aws-database-yury
   namespace: default
 spec:
+  compositionSelector:
+    matchLabels:
+      type: intelligent
+      scaling: ai-driven
   parameters:
     region: us-west-2
     engine: mariadb
@@ -15,7 +19,7 @@ spec:
       name: mariadbsecret
       key: password
     networkRef:
-      id: configuration-aws-database
+      id: intelligent-aws-database-yury
   writeConnectionSecretToRef:
-    name: configuration-aws-database-mariadb
+    name: intelligent-aws-database-yury
     namespace: default

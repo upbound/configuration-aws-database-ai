@@ -1,0 +1,132 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  labels:
+    provider: aws
+    type: intelligent
+    scaling: ai-driven
+    feature: rds-intelligent-scaling
+  name: xsqlinstances-intelligent.aws.platform.upbound.io
+spec:
+  compositeTypeRef:
+    apiVersion: aws.platform.upbound.io/v1alpha1
+    kind: XSQLInstance
+  mode: Pipeline
+  pipeline:
+  - step: xsqlinstance
+    functionRef:
+      name: upbound-configuration-aws-databasexsqlinstance
+  - step: fetch-metrics
+    functionRef:
+      name: upbound-function-rds-metrics
+    input:
+      apiVersion: rdsmetrics.fn.crossplane.io/v1beta1
+      kind: Input
+      databaseNameRef: "xr.metadata.name"
+      region: "us-west-2"
+      metrics:
+      - "CPUUtilization"
+      - "DatabaseConnections"
+      - "FreeableMemory"
+      - "FreeStorageSpace"
+      - "ReadIOPS"
+      - "WriteIOPS"
+      period: 300
+      target: "status.performanceMetrics"
+    credentials:
+      - name: aws-creds
+        source: Secret
+        secretRef:
+          namespace: crossplane-system
+          name: aws-creds
+  - step: intelligent-scaling-analysis
+    functionRef:
+      name: upbound-function-claude
+    input:
+      apiVersion: claude.fn.crossplane.io/v1beta1
+      kind: Prompt
+      contextFields: ["performanceMetrics"]
+      maxTokens: 8192
+      prompt: |
+        You are an intelligent RDS scaling system. Analyze the CloudWatch metrics provided in the <context> tag and determine if any RDS instances need scaling adjustments.
+
+        IMPORTANT CONSTRAINTS:
+        1. Only modify resources with kind "Instance" and apiVersion containing "rds"
+        2. Return ONLY the desired spec for resources, NOT the complete observed state
+        3. Keep the "upbound.io/name" annotation unchanged for proper resource matching
+        4. Do NOT create or modify composite resources (XSQLInstance) - only modify Instance resources
+        5. NEVER include: managedFields, resourceVersion, uid, generation, creationTimestamp, finalizers, ownerReferences, or status sections
+        6. Only include: apiVersion, kind, metadata.annotations, metadata.labels, metadata.name, and spec
+        4. Make scaling decisions based on these thresholds:
+           - High CPU (>80%): Consider increasing instance class
+           - High Memory usage (FreeableMemory <20% of total): Consider memory-optimized instance
+           - High IOPS (>80% of provisioned): Consider increasing storage or instance class
+           - High connections (>80% of max): Consider increasing instance class
+        
+        SCALING LOGIC:
+        - For high CPU/Memory/IOPS: Upgrade instance class (e.g., db.t3.micro → db.t3.small → db.t3.medium)
+        - For storage issues: Increase allocatedStorage by 20GB increments
+        - Only scale up, never scale down automatically for safety
+
+        DECISION REPORTING REQUIREMENT:
+        MANDATORY: You MUST include a structured decision summary in your response text using this EXACT format (copy the brackets and structure exactly):
+
+        [SCALING_DECISION]
+        DECISION: scale-up | no-change | scale-down
+        REASONING: Detailed explanation of why this decision was made
+        METRICS_ANALYZED: List of key metrics with values that influenced the decision
+        ACTIONS_PERFORMED: List of specific changes made to resources (or "No actions required")
+        NEXT_RECOMMENDATION: What should be monitored or done next
+        [/SCALING_DECISION]
+
+        EXAMPLE:
+        [SCALING_DECISION]
+        DECISION: no-change
+        REASONING: CPU utilization at 2.29% is well below the 80% threshold. Database has no active connections. All metrics indicate the system is operating with very low resource utilization.
+        METRICS_ANALYZED: CPUUtilization: 2.29% (threshold: 80%), DatabaseConnections: 0, FreeStorageSpace: 2.77GB, ReadIOPS: 1.3, WriteIOPS: 0.3
+        ACTIONS_PERFORMED: No scaling actions required - all metrics within normal operating ranges
+        NEXT_RECOMMENDATION: Continue monitoring metrics. Consider scaling up if CPU exceeds 80% or connections approach database limits
+        [/SCALING_DECISION]
+
+        This decision summary will be captured for audit and monitoring purposes.
+
+        If metrics indicate scaling is needed, update the Instance.rds resource accordingly.
+        If no scaling is needed, return the existing resources unchanged.
+
+        Focus on the RDS Instance resource and ensure proper resource management.
+
+        MANDATORY TOOL USAGE FOR LARGE YAML:
+        
+        The <composed> section contains large YAML resources that you MUST submit via submit_yaml_stream tool.
+        
+        STEP-BY-STEP PROCESS:
+        1. Analyze metrics and provide [SCALING_DECISION] in your text response
+        2. Look at the <composed> section - it contains the resources you must submit
+        3. If scaling is needed: modify ONLY the Instance resource's instanceClass or allocatedStorage
+        4. If no scaling needed: submit resources exactly as provided
+        5. Call submit_yaml_stream tool with the complete YAML
+        
+        FOR TOOL SUBMISSION:
+        - The submit_yaml_stream tool requires ONE parameter: "yaml_stream"
+        - Extract the essential fields from <composed> section resources
+        - Include ONLY: apiVersion, kind, clean metadata, and spec sections
+        - EXCLUDE: managedFields, status, resourceVersion, uid, ownerReferences, finalizers, generation, creationTimestamp
+        
+        EXAMPLE TOOL CALL for clean desired spec:
+        submit_yaml_stream({"yaml_stream": "---\napiVersion: rds.aws.upbound.io/v1beta1\nkind: Instance\nmetadata:\n  annotations:\n    crossplane.io/composition-resource-name: RDSInstanceSmall\n    upbound.io/name: RDSInstanceSmall\n  labels:\n    crossplane.io/composite: intelligent-aws-database-yury\n  name: intelligent-aws-database-yury-plsvg\nspec:\n  deletionPolicy: Delete\n  forProvider:\n    allocatedStorage: 5\n    instanceClass: db.t3.micro\n    ...\n---\napiVersion: rds.aws.upbound.io/v1beta1\nkind: SubnetGroup\n..."})
+        
+        CRITICAL: 
+        - You MUST include the yaml_stream parameter with actual YAML content
+        - Empty parameters {} will cause failure
+        - DO NOT include managedFields, status, resourceVersion, uid, ownerReferences
+        - Only include clean desired spec suitable for server-side apply
+    credentials:
+    - name: claude
+      source: Secret
+      secretRef:
+        namespace: crossplane-system
+        name: claude
+  - step: crossplane-contrib-function-auto-ready
+    functionRef:
+      name: crossplane-contrib-function-auto-ready
+  writeConnectionSecretsToNamespace: upbound-system
