@@ -19,7 +19,7 @@ spec:
   - apiVersion: pkg.crossplane.io/v1
     kind: Function
     package: xpkg.upbound.io/upbound/function-claude
-    version: 0.2.0-rc5-yury
+    version: 0.2.0-rc6-yury
   - apiVersion: pkg.crossplane.io/v1beta1
     kind: Function
     package: xpkg.upbound.io/upbound/function-rds-metrics

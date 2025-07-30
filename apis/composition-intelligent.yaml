@@ -67,6 +67,11 @@ spec:
         - For high CPU/Memory/IOPS: Upgrade instance class (e.g., db.t3.micro → db.t3.small → db.t3.medium)
         - For storage issues: Increase allocatedStorage by 20GB increments
         - Only scale up, never scale down automatically for safety
+        
+        CRITICAL: When scaling is needed, you MUST modify the actual resource fields:
+        - Change instanceClass from current value to larger size
+        - Change allocatedStorage if storage scaling needed
+        - Update the YAML spec fields, not just mention scaling in your text
 
         DECISION REPORTING REQUIREMENT:
         MANDATORY: You MUST include a structured decision summary in your response text using this EXACT format (copy the brackets and structure exactly):
@@ -112,12 +117,13 @@ spec:
         - Include ONLY: apiVersion, kind, clean metadata, and spec sections
         - EXCLUDE: managedFields, status, resourceVersion, uid, ownerReferences, finalizers, generation, creationTimestamp
         
-        EXAMPLE TOOL CALL for clean desired spec:
-        submit_yaml_stream({"yaml_stream": "---\napiVersion: rds.aws.upbound.io/v1beta1\nkind: Instance\nmetadata:\n  annotations:\n    crossplane.io/composition-resource-name: RDSInstanceSmall\n    upbound.io/name: RDSInstanceSmall\n  labels:\n    crossplane.io/composite: intelligent-aws-database-yury\n  name: intelligent-aws-database-yury-plsvg\nspec:\n  deletionPolicy: Delete\n  forProvider:\n    allocatedStorage: 5\n    instanceClass: db.t3.micro\n    ...\n---\napiVersion: rds.aws.upbound.io/v1beta1\nkind: SubnetGroup\n..."})
+        SCALING EXAMPLE - If CPU > 80%, change instanceClass:
+        submit_yaml_stream({"yaml_stream": "---\napiVersion: rds.aws.upbound.io/v1beta1\nkind: Instance\nmetadata:\n  annotations:\n    crossplane.io/composition-resource-name: RDSInstanceSmall\n    upbound.io/name: RDSInstanceSmall\n  labels:\n    crossplane.io/composite: intelligent-aws-database-yury\n  name: intelligent-aws-database-yury-plsvg\nspec:\n  deletionPolicy: Delete\n  forProvider:\n    allocatedStorage: 5\n    instanceClass: db.t3.small    # CHANGED from db.t3.micro\n    engine: mariadb\n    engineVersion: \"10.11\"\n    ...\n---\napiVersion: rds.aws.upbound.io/v1beta1\nkind: SubnetGroup\n..."})
         
         CRITICAL: 
         - You MUST include the yaml_stream parameter with actual YAML content
         - Empty parameters {} will cause failure
+        - When scaling needed: MODIFY the instanceClass or allocatedStorage values
         - DO NOT include managedFields, status, resourceVersion, uid, ownerReferences
         - Only include clean desired spec suitable for server-side apply
     credentials:

@@ -131,6 +131,67 @@ spec:
 
 **Current Status**: **Experimental** - Successfully proven concept with real infrastructure, ready for production validation and monitoring.
 
+## Load Testing and Benchmarking
+
+### Database Stress Testing for AI Scaling Validation
+
+To validate the intelligent scaling system, you can stress test the RDS instance to trigger high CPU utilization and observe AI-driven scaling decisions:
+
+#### MySQL/MariaDB Stress Test
+```bash
+# Trigger high CPU load with multiple concurrent MD5 hash computations
+for i in {1..8}; do
+    mysql \
+      --host=your-rds-endpoint.region.rds.amazonaws.com \
+      --user=masteruser \
+      --password=your-password \
+      --default-auth=mysql_native_password \
+      --execute="SELECT BENCHMARK(1000000000, MD5('trigger_scaling_$i'));" &
+done
+```
+
+#### PostgreSQL Stress Test
+```bash
+# Alternative for PostgreSQL instances
+for i in {1..8}; do
+    psql "postgresql://masteruser:password@your-rds-endpoint.region.rds.amazonaws.com/upbound" \
+      -c "SELECT md5(generate_series(1,10000000)::text);" &
+done
+```
+
+#### Expected Behavior
+1. **CPU Spike**: Database CPU should reach 80%+ utilization within 1-2 minutes
+2. **Metrics Collection**: function-rds-metrics captures high CPU in context
+3. **AI Analysis**: Claude detects threshold breach and recommends scaling
+4. **Infrastructure Change**: Instance class upgraded (e.g., db.t3.micro → db.t3.small)
+5. **Performance Recovery**: CPU utilization drops after scaling completes
+
+#### Monitoring Scaling Events
+```bash
+# Watch Claude's scaling decisions
+kubectl get xsqlinstance your-db-name -o jsonpath='{.status.claudeDecision}' | jq .
+
+# Check current instance class via Kubernetes
+kubectl get instance.rds -l crossplane.io/composite=your-db-name -o jsonpath='{.items[0].spec.forProvider.instanceClass}'
+
+# Monitor instance class changes with watch
+kubectl get instance.rds -l crossplane.io/composite=your-db-name -o custom-columns=NAME:.metadata.name,CLASS:.spec.forProvider.instanceClass,STATUS:.status.conditions[-1].type --watch
+
+# Check performance metrics from XR status
+kubectl get xsqlinstance your-db-name -o jsonpath='{.status.performanceMetrics}' | jq .
+
+# Alternative: Monitor AWS console for instance class changes
+aws rds describe-db-instances --db-instance-identifier your-db-name --query 'DBInstances[0].DBInstanceClass'
+```
+
+#### Cleanup
+```bash
+# Stop all background processes
+pkill -f "mysql.*BENCHMARK"
+# or for PostgreSQL
+pkill -f "psql.*generate_series"
+```
+
 ## Testing
 
 The configuration can be tested using:

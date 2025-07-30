@@ -14,6 +14,7 @@ spec:
     engineVersion: "10.11"
     storageGB: 5
     autoGeneratePassword: true
+    publiclyAccessible: true  # Temporarily for stress testing
     passwordSecretRef:
       namespace: default
       name: mariadbsecret

@@ -70,6 +70,10 @@ spec:
                         - key
                     autoGeneratePassword:
                       type: boolean
+                    publiclyAccessible:
+                      type: boolean
+                      description: Whether the database should be publicly accessible from the internet
+                      default: false
                     networkRef:
                       type: object
                       description: "A reference to the Network object that this database should be connected to."
