@@ -52,11 +52,12 @@ spec:
 
         IMPORTANT CONSTRAINTS:
         1. Only modify resources with kind "Instance" and apiVersion containing "rds"
-        2. Return ONLY the desired spec for resources, NOT the complete observed state
-        3. Keep the "upbound.io/name" annotation unchanged for proper resource matching
+        2. NEVER CREATE NEW RESOURCES - only update existing ones by preserving all existing metadata
+        3. Keep ALL existing metadata unchanged: name, namespace, labels, annotations (especially "upbound.io/name")
         4. Do NOT create or modify composite resources (XSQLInstance) - only modify Instance resources
         5. NEVER include: managedFields, resourceVersion, uid, generation, creationTimestamp, finalizers, ownerReferences, or status sections
-        6. Only include: apiVersion, kind, metadata.annotations, metadata.labels, metadata.name, and spec
+        6. When scaling needed: ONLY modify the instanceClass or allocatedStorage fields in spec.forProvider
+        7. PRESERVE all other existing spec fields unchanged - do not recreate the entire spec
         4. Make scaling decisions based on these thresholds:
            - High CPU (>80%): Consider increasing instance class
            - High Memory usage (FreeableMemory <20% of total): Consider memory-optimized instance
@@ -68,10 +69,11 @@ spec:
         - For storage issues: Increase allocatedStorage by 20GB increments
         - Only scale up, never scale down automatically for safety
         
-        CRITICAL: When scaling is needed, you MUST modify the actual resource fields:
-        - Change instanceClass from current value to larger size
-        - Change allocatedStorage if storage scaling needed
-        - Update the YAML spec fields, not just mention scaling in your text
+        CRITICAL UPDATE APPROACH:
+        - PRESERVE the entire existing resource structure from <composed> section
+        - ONLY modify the specific scaling field: spec.forProvider.instanceClass or spec.forProvider.allocatedStorage
+        - Keep all other fields exactly as they appear in the observed resource
+        - This ensures in-place updates rather than resource recreation
 
         DECISION REPORTING REQUIREMENT:
         MANDATORY: You MUST include a structured decision summary in your response text using this EXACT format (copy the brackets and structure exactly):
@@ -117,15 +119,20 @@ spec:
         - Include ONLY: apiVersion, kind, clean metadata, and spec sections
         - EXCLUDE: managedFields, status, resourceVersion, uid, ownerReferences, finalizers, generation, creationTimestamp
         
-        SCALING EXAMPLE - If CPU > 80%, change instanceClass:
-        submit_yaml_stream({"yaml_stream": "---\napiVersion: rds.aws.upbound.io/v1beta1\nkind: Instance\nmetadata:\n  annotations:\n    crossplane.io/composition-resource-name: RDSInstanceSmall\n    upbound.io/name: RDSInstanceSmall\n  labels:\n    crossplane.io/composite: intelligent-aws-database-yury\n  name: intelligent-aws-database-yury-plsvg\nspec:\n  deletionPolicy: Delete\n  forProvider:\n    allocatedStorage: 5\n    instanceClass: db.t3.small    # CHANGED from db.t3.micro\n    engine: mariadb\n    engineVersion: \"10.11\"\n    ...\n---\napiVersion: rds.aws.upbound.io/v1beta1\nkind: SubnetGroup\n..."})
+        SCALING EXAMPLE - If CPU > 80%, preserve everything and only change instanceClass:
+        1. Take the ENTIRE Instance resource from <composed> section
+        2. Keep ALL metadata, labels, annotations exactly the same
+        3. Keep ALL spec fields the same EXCEPT change instanceClass: "db.t3.small"
+        4. Submit the complete resource with only that single field changed
         
-        CRITICAL: 
+        CRITICAL REQUIREMENTS:
         - You MUST include the yaml_stream parameter with actual YAML content
         - Empty parameters {} will cause failure
-        - When scaling needed: MODIFY the instanceClass or allocatedStorage values
+        - PRESERVE all existing resource metadata and spec fields
+        - ONLY change the scaling field (instanceClass or allocatedStorage)
         - DO NOT include managedFields, status, resourceVersion, uid, ownerReferences
-        - Only include clean desired spec suitable for server-side apply
+        - Use correct field name "writeConnectionSecretToRef" (not "writeConnectionSecreteToRef")
+        - This approach ensures UPDATE not RECREATION of resources
     credentials:
     - name: claude
       source: Secret
