@@ -5,10 +5,11 @@ metadata:
   labels:
     provider: aws
     type: intelligent-scaling-watch
-    feature: cost-effective-reactive-scaling
+    feature: reactive-scaling-with-debouncing
 spec:
-  # Replace existing operations for the same resource to prevent overlap
   concurrencyPolicy: Forbid
+  successfulHistoryLimit: 2
+  failedHistoryLimit: 1
   
   operationTemplate:
     spec:
@@ -22,19 +23,22 @@ spec:
           systemPrompt: |
             You are an intelligent RDS scaling system that analyzes XSQLInstance resources
             and makes scaling decisions based on CloudWatch performance metrics.
-            
-            You should use the tools available to you to analyze the resource and make scaling decisions.
           userPrompt: |
             You are analyzing an XSQLInstance resource for potential RDS scaling needs.
             
             SCALING ANALYSIS CRITERIA:
             1. Check performance metrics in status.performanceMetrics
             2. Check current instanceClass in spec.parameters.instanceClass
+            3. Check if analysis was done recently (intelligent-scaling annotations)
             
-            SCALING TRIGGERS:
-            - CPU > 80%: scale up instance class
-            - FreeableMemory < 20%: scale up for memory pressure  
-            - DatabaseConnections > 80% of max: scale up for connection pressure
+            RATE LIMITING:
+            - Skip analysis if "intelligent-scaling/last-analyzed" annotation exists and is < 5 minutes old
+            - Only proceed if no recent analysis or if metrics show significant changes
+            
+            SCALING TRIGGERS (conservative for cost control):
+            - CPU > 85%: scale up instance class
+            - FreeableMemory < 15%: scale up for memory pressure  
+            - DatabaseConnections > 85% of max: scale up for connection pressure
             
             INSTANCE CLASS PROGRESSION:
             db.t3.micro → db.t3.small → db.t3.medium → db.t3.large
@@ -79,9 +83,6 @@ spec:
             - Use current timestamp in ISO8601 format
             - Provide brief, clear reasoning in annotations
             - Output only the JSON, no explanatory text
-            
-            Use the tools available to you to analyze the resource and output the JSON patch.
-            Begin analysis now.
 
             XSQLInstance Resource:
             {{ .Resources }}

@@ -15,33 +15,31 @@ spec:
     spec:
       mode: Pipeline
       pipeline:
-      - functionRef:
+      - step: upbound-function-claude
+        functionRef:
           name: upbound-function-claude
+        requirements:
+          requiredResources:
+          - apiVersion: aws.platform.upbound.io/v1alpha1
+            kind: XSQLInstance
+            name: rds-metrics-database-yury
+            requirementName: ops.crossplane.io/watched-resource
         input:
           apiVersion: claude.fn.upbound.io/v1alpha1
           kind: Prompt
           systemPrompt: |
-            You are an intelligent RDS scaling system that runs on a scheduled basis to analyze 
-            CloudWatch metrics and make cost-effective scaling decisions for AWS RDS instances 
-            managed by Crossplane.
-            
-            You should use the tools available to you to discover and analyze XSQLInstance resources.
+            You are an intelligent RDS scaling system that analyzes XSQLInstance resources
+            and makes scaling decisions based on CloudWatch performance metrics.
           userPrompt: |
-            You are running a scheduled analysis of a specific RDS instance for scaling decisions.
+            You are analyzing an XSQLInstance resource for potential RDS scaling needs.
             
-            TARGET RESOURCE: XSQLInstance named "rds-metrics-database-yury" 
-            
-            STEP 1: Use available tools to fetch the specific XSQLInstance resource
-            - Fetch XSQLInstance resource: "rds-metrics-database-yury"
-            - This resource uses composition "xsqlinstances-rds-metrics.aws.platform.upbound.io"
-            
-            STEP 2: Analyze the fetched XSQLInstance resource:
+            SCALING ANALYSIS CRITERIA:
             1. Check performance metrics in status.performanceMetrics
             2. Check current instanceClass in spec.parameters.instanceClass
             3. Check if analysis was done recently (intelligent-scaling annotations)
             
             RATE LIMITING:
-            - Skip analysis if "intelligent-scaling/last-analyzed" annotation exists and is < 15 minutes old
+            - Skip analysis if "intelligent-scaling/last-analyzed" annotation exists and is < 5 minutes old
             - Only proceed if no recent analysis or if metrics show significant changes
             
             SCALING TRIGGERS (conservative for cost control):
@@ -52,14 +50,15 @@ spec:
             INSTANCE CLASS PROGRESSION:
             db.t3.micro → db.t3.small → db.t3.medium → db.t3.large
             
-            STEP 3: For each resource that needs updates, output JSON:
+            REQUIRED OUTPUT FORMAT:
+            You must output the XSQLInstance resource in JSON format with ONLY the fields that need to be patched.
             
             If scaling is needed:
             {
               "apiVersion": "aws.platform.upbound.io/v1alpha1",
               "kind": "XSQLInstance", 
               "metadata": {
-                "name": "rds-metrics-database-yury",
+                "name": "<exact-resource-name>",
                 "annotations": {
                   "intelligent-scaling/last-scaled": "<current-timestamp-iso8601>",
                   "intelligent-scaling/last-scaled-decision": "<reasoning-for-scaling>"
@@ -72,12 +71,12 @@ spec:
               }
             }
             
-            If no scaling needed but analysis should be recorded:
+            If no scaling is needed:
             {
               "apiVersion": "aws.platform.upbound.io/v1alpha1", 
               "kind": "XSQLInstance",
               "metadata": {
-                "name": "rds-metrics-database-yury",
+                "name": "<exact-resource-name>",
                 "annotations": {
                   "intelligent-scaling/last-analyzed": "<current-timestamp-iso8601>",
                   "intelligent-scaling/last-scaled-decision": "<reasoning-for-no-scaling>"
@@ -85,16 +84,15 @@ spec:
               }
             }
             
-            STEP 4: Provide summary analysis
-            Report on:
-            - Total XSQLInstance resources found
-            - Resources analyzed vs skipped (due to recent analysis)
-            - Scaling decisions made
-            - Estimated cost impact
-            
-            Use the tools available to you to fetch the specific XSQLInstance resource and perform this analysis.
-            Begin by fetching XSQLInstance "rds-metrics-database-yury" and analyzing its current state and metrics.
-        step: upbound-function-claude
+            Rules:
+            - Use the exact resource name from the input
+            - Only include fields that need to be updated  
+            - Use current timestamp in ISO8601 format
+            - Provide brief, clear reasoning in annotations
+            - Output only the JSON, no explanatory text
+
+            XSQLInstance Resource:
+            {{ .Resources }}
         credentials:
         - name: claude
           source: Secret
@@ -102,4 +100,4 @@ spec:
             namespace: crossplane-system
             name: claude
       retryLimit: 3
-  schedule: '*/1 * * * *'  # Run every 15 minutes
+  schedule: '*/1 * * * *'  # Run every minute for testing
