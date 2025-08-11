@@ -7,6 +7,10 @@ metadata:
     type: intelligent-scaling-cron
     feature: cost-effective-scheduled-scaling
 spec:
+  concurrencyPolicy: Forbid
+  successfulHistoryLimit: 5
+  failedHistoryLimit: 1
+  
   operationTemplate:
     spec:
       mode: Pipeline
@@ -19,71 +23,77 @@ spec:
           systemPrompt: |
             You are an intelligent RDS scaling system that runs on a scheduled basis to analyze 
             CloudWatch metrics and make cost-effective scaling decisions for AWS RDS instances 
-            managed by Crossplane. Your task is to find XSQLInstance resources with rds-metrics 
-            composition, analyze their performance metrics, and determine if instance class 
-            scaling is needed.
+            managed by Crossplane.
+            
+            You should use the tools available to you to discover and analyze XSQLInstance resources.
           userPrompt: |
-            <instructions>
-            You are analyzing all XSQLInstance resources for potential RDS scaling decisions on a scheduled basis.
+            You are running a scheduled analysis of a specific RDS instance for scaling decisions.
             
-            1. Find and analyze XSQLInstance resources that:
-               - Use composition "xsqlinstances-rds-metrics.aws.platform.upbound.io" 
-               - Have performance metrics in status.performanceMetrics
+            TARGET RESOURCE: XSQLInstance named "rds-metrics-database-yury" 
             
-            2. SCALING TRIGGERS (conservative for cost control):
-               - CPU > 85%: scale up instance class
-               - FreeableMemory < 15%: scale up for memory pressure  
-               - DatabaseConnections > 85% of max: scale up for connection pressure
+            STEP 1: Use available tools to fetch the specific XSQLInstance resource
+            - Fetch XSQLInstance resource: "rds-metrics-database-yury"
+            - This resource uses composition "xsqlinstances-rds-metrics.aws.platform.upbound.io"
             
-            3. INSTANCE CLASS PROGRESSION:
-               db.t3.micro → db.t3.small → db.t3.medium → db.t3.large
+            STEP 2: Analyze the fetched XSQLInstance resource:
+            1. Check performance metrics in status.performanceMetrics
+            2. Check current instanceClass in spec.parameters.instanceClass
+            3. Check if analysis was done recently (intelligent-scaling annotations)
             
-            4. For each XSQLInstance that needs scaling:
-               - Output the XSQLInstance with updated instanceClass in spec.parameters
-               - Include "intelligent-scaling/last-scaled" annotation with current timestamp (e.g., "2025-08-11T11:00:00Z")
-               - Include "intelligent-scaling/last-scaled-decision" annotation with detailed reasoning for the scaling decision
+            RATE LIMITING:
+            - Skip analysis if "intelligent-scaling/last-analyzed" annotation exists and is < 15 minutes old
+            - Only proceed if no recent analysis or if metrics show significant changes
             
-            5. For XSQLInstance resources with no scaling needed:
-               - Output them with added annotations (but no spec changes):
-                 - "intelligent-scaling/last-analyzed" annotation with current timestamp
-                 - "intelligent-scaling/last-scaled-decision" annotation explaining why no scaling was needed
+            SCALING TRIGGERS (conservative for cost control):
+            - CPU > 85%: scale up instance class
+            - FreeableMemory < 15%: scale up for memory pressure  
+            - DatabaseConnections > 85% of max: scale up for connection pressure
             
-            6. REPORTING RESULTS:
-               Instead of creating ConfigMaps, provide a detailed analysis summary in your response text.
-               This will be captured in the operation status for audit and monitoring.
-               
-               Include this structured summary at the end of your response:
-               
-               [SCALING_ANALYSIS_SUMMARY]
-               TIMESTAMP: 2025-08-11T11:00:00Z
-               RESOURCES_ANALYZED: list of XSQLInstance names analyzed
-               SCALING_DECISIONS: list of scaling actions taken (or "no scaling needed")
-               METRICS_SUMMARY: key performance metrics observed
-               COST_IMPACT: estimated monthly cost changes (if any)
-               RECOMMENDATIONS: any operational recommendations
-               [/SCALING_ANALYSIS_SUMMARY]
+            INSTANCE CLASS PROGRESSION:
+            db.t3.micro → db.t3.small → db.t3.medium → db.t3.large
             
-            7. Use submit_yaml_stream tool to output YAML manifests for any XSQLInstance resources
+            STEP 3: For each resource that needs updates, output JSON:
             
-            ANNOTATION EXAMPLES:
+            If scaling is needed:
+            {
+              "apiVersion": "aws.platform.upbound.io/v1alpha1",
+              "kind": "XSQLInstance", 
+              "metadata": {
+                "name": "rds-metrics-database-yury",
+                "annotations": {
+                  "intelligent-scaling/last-scaled": "<current-timestamp-iso8601>",
+                  "intelligent-scaling/last-scaled-decision": "<reasoning-for-scaling>"
+                }
+              },
+              "spec": {
+                "parameters": {
+                  "instanceClass": "<new-instance-class>"
+                }
+              }
+            }
             
-            For scaling action:
-            intelligent-scaling/last-scaled: "2025-08-11T11:00:00Z"
-            intelligent-scaling/last-scaled-decision: "CPU at 87% for 10+ minutes, scaled from db.t3.micro to db.t3.small"
+            If no scaling needed but analysis should be recorded:
+            {
+              "apiVersion": "aws.platform.upbound.io/v1alpha1", 
+              "kind": "XSQLInstance",
+              "metadata": {
+                "name": "rds-metrics-database-yury",
+                "annotations": {
+                  "intelligent-scaling/last-analyzed": "<current-timestamp-iso8601>",
+                  "intelligent-scaling/last-scaled-decision": "<reasoning-for-no-scaling>"
+                }
+              }
+            }
             
-            For no scaling needed:
-            intelligent-scaling/last-analyzed: "2025-08-11T11:00:00Z" 
-            intelligent-scaling/last-scaled-decision: "CPU at 15%, Memory 60% free, Connections 2/40 - all metrics within normal ranges"
+            STEP 4: Provide summary analysis
+            Report on:
+            - Total XSQLInstance resources found
+            - Resources analyzed vs skipped (due to recent analysis)
+            - Scaling decisions made
+            - Estimated cost impact
             
-            CRITICAL: 
-            - Only modify instanceClass field in spec, preserve all other XSQLInstance spec parameters
-            - Each manifest must include upbound.io/name annotation for identification
-            - Always add decision reasoning to XSQLInstance annotations for audit trail
-            - Provide detailed analysis in your response text for operation status
-            </instructions>
-
-            Analyze all XSQLInstance resources with rds-metrics composition and determine scaling needs.
-            Output updated XSQLInstances if scaling changes are needed, and provide detailed analysis summary in your response.
+            Use the tools available to you to fetch the specific XSQLInstance resource and perform this analysis.
+            Begin by fetching XSQLInstance "rds-metrics-database-yury" and analyzing its current state and metrics.
         step: upbound-function-claude
         credentials:
         - name: claude
@@ -92,4 +102,4 @@ spec:
             namespace: crossplane-system
             name: claude
       retryLimit: 3
-  schedule: '*/1 * * * *'  # Run every 30 minutes for cost efficiency
+  schedule: '*/1 * * * *'  # Run every 15 minutes
