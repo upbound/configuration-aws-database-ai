@@ -1,4 +1,4 @@
-apiVersion: meta.dev.upbound.io/v1alpha1
+apiVersion: meta.dev.upbound.io/v2alpha1
 kind: Project
 metadata:
   name: configuration-aws-database
@@ -11,7 +11,7 @@ spec:
   - apiVersion: pkg.crossplane.io/v1
     kind: Configuration
     package: xpkg.upbound.io/upbound/configuration-aws-network
-    version: v0.25.0-rc1
+    version: v0.25.0-rc2-yury
   - apiVersion: pkg.crossplane.io/v1
     kind: Function
     package: xpkg.upbound.io/crossplane-contrib/function-auto-ready
@@ -19,7 +19,7 @@ spec:
   - apiVersion: pkg.crossplane.io/v1
     kind: Function
     package: xpkg.upbound.io/upbound/function-claude
-    version: 0.2.0-rc6-yury
+    version: v0.2.0
   - apiVersion: pkg.crossplane.io/v1beta1
     kind: Function
     package: xpkg.upbound.io/upbound/function-rds-metrics

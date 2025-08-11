@@ -36,12 +36,12 @@ _items = [
         }
     }
     rdsv1beta1.Instance{
-        metadata: _metadata("RDSInstanceSmall")
+        metadata: _metadata("rds-instance-small")
         spec: defaultSpec | {
             forProvider: {
                 dbName = "upbound"
                 dbSubnetGroupNameSelector.matchControllerRef = True
-                instanceClass = "db.t3.micro"
+                instanceClass = oxrParams.instanceClass
                 applyImmediately = True
                 identifier = oxr.metadata.name
                 publiclyAccessible = oxrParams.publiclyAccessible or False

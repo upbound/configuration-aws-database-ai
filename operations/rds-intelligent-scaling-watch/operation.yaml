@@ -1,0 +1,98 @@
+apiVersion: ops.crossplane.io/v1alpha1
+kind: WatchOperation
+metadata:
+  name: rds-intelligent-scaling-watch
+  labels:
+    provider: aws
+    type: intelligent-scaling-watch
+    feature: cost-effective-reactive-scaling
+spec:
+  # Replace existing operations for the same resource to prevent overlap
+  concurrencyPolicy: Forbid
+  
+  operationTemplate:
+    spec:
+      mode: Pipeline
+      pipeline:
+      - functionRef:
+          name: upbound-function-claude
+        input:
+          apiVersion: claude.fn.upbound.io/v1alpha1
+          kind: Prompt
+          systemPrompt: |
+            You are an intelligent RDS scaling system that analyzes XSQLInstance resources
+            and makes scaling decisions based on CloudWatch performance metrics.
+            
+            You should use the tools available to you to analyze the resource and make scaling decisions.
+          userPrompt: |
+            You are analyzing an XSQLInstance resource for potential RDS scaling needs.
+            
+            SCALING ANALYSIS CRITERIA:
+            1. Check performance metrics in status.performanceMetrics
+            2. Check current instanceClass in spec.parameters.instanceClass
+            
+            SCALING TRIGGERS:
+            - CPU > 80%: scale up instance class
+            - FreeableMemory < 20%: scale up for memory pressure  
+            - DatabaseConnections > 80% of max: scale up for connection pressure
+            
+            INSTANCE CLASS PROGRESSION:
+            db.t3.micro → db.t3.small → db.t3.medium → db.t3.large
+            
+            REQUIRED OUTPUT FORMAT:
+            You must output the XSQLInstance resource in JSON format with ONLY the fields that need to be patched.
+            
+            If scaling is needed:
+            {
+              "apiVersion": "aws.platform.upbound.io/v1alpha1",
+              "kind": "XSQLInstance", 
+              "metadata": {
+                "name": "<exact-resource-name>",
+                "annotations": {
+                  "intelligent-scaling/last-scaled": "<current-timestamp-iso8601>",
+                  "intelligent-scaling/last-scaled-decision": "<reasoning-for-scaling>"
+                }
+              },
+              "spec": {
+                "parameters": {
+                  "instanceClass": "<new-instance-class>"
+                }
+              }
+            }
+            
+            If no scaling is needed:
+            {
+              "apiVersion": "aws.platform.upbound.io/v1alpha1", 
+              "kind": "XSQLInstance",
+              "metadata": {
+                "name": "<exact-resource-name>",
+                "annotations": {
+                  "intelligent-scaling/last-analyzed": "<current-timestamp-iso8601>",
+                  "intelligent-scaling/last-scaled-decision": "<reasoning-for-no-scaling>"
+                }
+              }
+            }
+            
+            Rules:
+            - Use the exact resource name from the input
+            - Only include fields that need to be updated  
+            - Use current timestamp in ISO8601 format
+            - Provide brief, clear reasoning in annotations
+            - Output only the JSON, no explanatory text
+            
+            Use the tools available to you to analyze the resource and output the JSON patch.
+            Begin analysis now.
+
+            XSQLInstance Resource:
+            {{ .Resources }}
+        step: upbound-function-claude
+        credentials:
+        - name: claude
+          source: Secret
+          secretRef:
+            namespace: crossplane-system
+            name: claude
+      retryLimit: 3
+  watch:
+    apiVersion: aws.platform.upbound.io/v1alpha1
+    kind: XSQLInstance

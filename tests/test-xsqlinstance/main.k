@@ -26,6 +26,7 @@ _items = [
                             }
                             region = "us-west-2"
                             storageGB = 5
+                            instanceClass = "db.t3.micro"
                         }
                         writeConnectionSecretToRef = {
                             name = "configuration-aws-database-mariadb"
@@ -144,6 +145,7 @@ _items = [
                             }
                             region = "us-west-2"
                             storageGB = 5
+                            instanceClass = "db.t3.micro"
                         }
                         writeConnectionSecretToRef = {
                             name = "configuration-aws-database-postgres"

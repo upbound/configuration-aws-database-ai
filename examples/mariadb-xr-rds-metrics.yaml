@@ -1,0 +1,26 @@
+apiVersion: aws.platform.upbound.io/v1alpha1
+kind: XSQLInstance
+metadata:
+  name: rds-metrics-database-yury
+  namespace: default
+spec:
+  compositionSelector:
+    matchLabels:
+      type: rds-metrics
+  parameters:
+    region: us-west-2
+    engine: mariadb
+    engineVersion: "10.11"
+    storageGB: 5
+    instanceClass: db.t3.micro
+    autoGeneratePassword: true
+    publiclyAccessible: true  # Temporarily for stress testing
+    passwordSecretRef:
+      namespace: default
+      name: mariadbsecret
+      key: password
+    networkRef:
+      id: rds-metrics-database-yury
+  writeConnectionSecretToRef:
+    name: rds-metrics-database-yury
+    namespace: default

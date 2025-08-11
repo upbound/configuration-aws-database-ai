@@ -1,0 +1,43 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  labels:
+    provider: aws
+    type: rds-metrics
+  name: xsqlinstances-rds-metrics.aws.platform.upbound.io
+spec:
+  compositeTypeRef:
+    apiVersion: aws.platform.upbound.io/v1alpha1
+    kind: XSQLInstance
+  mode: Pipeline
+  pipeline:
+  - step: xsqlinstance
+    functionRef:
+      name: upbound-configuration-aws-databasexsqlinstance
+  - step: fetch-metrics
+    functionRef:
+      name: upbound-function-rds-metrics
+    input:
+      apiVersion: rdsmetrics.fn.crossplane.io/v1beta1
+      kind: Input
+      databaseNameRef: "xr.metadata.name"
+      region: "us-west-2"
+      metrics:
+      - "CPUUtilization"
+      - "DatabaseConnections"
+      - "FreeableMemory"
+      - "FreeStorageSpace"
+      - "ReadIOPS"
+      - "WriteIOPS"
+      period: 300
+      target: "status.performanceMetrics"
+    credentials:
+      - name: aws-creds
+        source: Secret
+        secretRef:
+          namespace: crossplane-system
+          name: aws-creds
+  - step: crossplane-contrib-function-auto-ready
+    functionRef:
+      name: crossplane-contrib-function-auto-ready
+  writeConnectionSecretsToNamespace: upbound-system

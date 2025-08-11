@@ -54,6 +54,10 @@ spec:
                       description: This RDS Instance engine version, see https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_CreateDBInstance.html for possible values.
                     storageGB:
                       type: integer
+                    instanceClass:
+                      type: string
+                      description: The instance class for the RDS instance, such as db.t3.micro, db.t3.small, etc.
+                      default: "db.t3.micro"
                     passwordSecretRef:
                       type: object
                       description: "A reference to the Secret object containing database password"
