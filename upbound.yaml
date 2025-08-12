@@ -1,7 +1,7 @@
 apiVersion: meta.dev.upbound.io/v2alpha1
 kind: Project
 metadata:
-  name: configuration-aws-database
+  name: configuration-aws-database-ai
 spec:
   dependsOn:
   - apiVersion: pkg.crossplane.io/v1
