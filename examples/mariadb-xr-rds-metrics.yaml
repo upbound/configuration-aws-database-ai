@@ -3,6 +3,8 @@ kind: XSQLInstance
 metadata:
   name: rds-metrics-database-yury
   namespace: default
+  labels:
+    scale: me
 spec:
   compositionSelector:
     matchLabels:

@@ -22,7 +22,8 @@ spec:
           requiredResources:
           - apiVersion: aws.platform.upbound.io/v1alpha1
             kind: XSQLInstance
-            name: rds-metrics-database-yury
+            matchLabels:
+              scale: me
             requirementName: ops.crossplane.io/watched-resource
         input:
           apiVersion: claude.fn.upbound.io/v1alpha1
