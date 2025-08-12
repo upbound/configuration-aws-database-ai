@@ -1,8 +1,8 @@
 apiVersion: aws.platform.upbound.io/v1alpha1
 kind: XNetwork
 metadata:
-  name: rds-metrics-database-yury
+  name: rds-metrics-database-ai-scale
 spec:
   parameters:
-    id: rds-metrics-database-yury
+    id: rds-metrics-database-ai-scale
     region: us-west-2
