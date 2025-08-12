@@ -202,9 +202,66 @@ The configuration can be tested using:
 - `up test run tests/*` to run composition tests
 - `up test run tests/* --e2e` to run end-to-end tests
 
+## Crossplane v2.0 Operations
+
+This configuration includes **Crossplane Operations** for automated intelligent scaling using both scheduled and reactive patterns. Operations are automatically deployed with `up project run`.
+
+### CronOperation: Scheduled Scaling Analysis
+- **Schedule**: Every minute (`*/1 * * * *`) for proactive monitoring
+- **Target**: XSQLInstance resources with `scale: me` label
+- **Purpose**: Regular scheduled analysis for predictable workloads
+
+### WatchOperation: Reactive Scaling
+- **Trigger**: Any XSQLInstance resource changes
+- **Purpose**: Immediate response to metric updates or configuration changes
+- **Debouncing**: 5-minute rate limiting to prevent scaling thrash
+
+### Operation Features
+- **AI-Powered Decision Making**: Uses `upbound-function-claude` for intelligent scaling decisions
+- **Conservative Thresholds**: CPU >85%, Memory <15%, Connections >85%
+- **Instance Progression**: `db.t3.micro → db.t3.small → db.t3.medium → db.t3.large`
+- **Rate Limiting**: Annotations-based cooldown to prevent excessive scaling
+- **Audit Trail**: Full reasoning captured in resource annotations
+
+### Quick Start with Operations
+1. **Setup Claude API Secret**:
+   ```bash
+   kubectl create secret generic claude \
+     --from-literal=ANTHROPIC_API_KEY=your-api-key \
+     -n crossplane-system
+   ```
+
+2. **Deploy Configuration and Operations**:
+   ```bash
+   up project run  # Automatically includes operations/
+   ```
+
+3. **Deploy Example with Scaling Labels**:
+   ```bash
+   # Network dependency
+   kubectl apply -f examples/network-rds-metrics.yaml
+   
+   # Database with scaling enabled
+   kubectl apply -f examples/mariadb-xr-rds-metrics.yaml
+   ```
+
+4. **Monitor Operations**:
+   ```bash
+   # Check operation status
+   kubectl get cronoperation,watchoperation -n crossplane-system
+   
+   # Monitor operation executions
+   kubectl get operation -n crossplane-system --watch
+   ```
+
+### Example Resources for Operations Testing
+The configuration includes dedicated examples for operations testing:
+- `examples/network-rds-metrics.yaml`: Network setup for RDS metrics testing
+- `examples/mariadb-xr-rds-metrics.yaml`: XSQLInstance with `scale: me` label for operation targeting
+
 ## Deployment
 
-- Execute `up project run`
+- Execute `up project run` (automatically includes operations)
 - Alternatively, install the Configuration from the [Upbound Marketplace](https://marketplace.upbound.io/configurations/upbound/configuration-aws-database)
 - Check [examples](/examples/) for example XR(Composite Resource)
 
