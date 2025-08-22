@@ -33,5 +33,5 @@ spec:
     This repository offers a specialized configuration for deploying and managing an AWS database on Kubernetes using Crossplane. This setup provides the necessary infrastructure to deploy RDS instances managed with Crossplane in Kubernetes. This approach ensures a flexible, streamlined deployment workflow.
 
     For more details and customization options, you can explore [the GitHub repository](https://github.com/upbound/configuration-aws-database).
-  repository: xpkg.upbound.io/upbound/configuration-aws-database
-  source: github.com/upbound/configuration-aws-database
+  repository: xpkg.upbound.io/upbound/configuration-aws-database-ai
+  source: github.com/upbound/configuration-aws-database-ai
