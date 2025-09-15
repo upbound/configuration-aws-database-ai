@@ -31,7 +31,7 @@ spec:
       - "FreeStorageSpace"
       - "ReadIOPS"
       - "WriteIOPS"
-      period: 300
+      period: 60
       target: "status.performanceMetrics"
     credentials:
       - name: aws-creds
@@ -59,7 +59,7 @@ spec:
         6. When scaling needed: ONLY modify the instanceClass or allocatedStorage fields in spec.forProvider
         7. PRESERVE all other existing spec fields unchanged - do not recreate the entire spec
         4. Make scaling decisions based on these thresholds:
-           - High CPU (>80%): Consider increasing instance class
+           - High CPU (>50%): Consider increasing instance class
            - High Memory usage (FreeableMemory <20% of total): Consider memory-optimized instance
            - High IOPS (>80% of provisioned): Consider increasing storage or instance class
            - High connections (>80% of max): Consider increasing instance class
