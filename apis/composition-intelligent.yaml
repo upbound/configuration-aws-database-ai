@@ -65,9 +65,15 @@ spec:
            - High connections (>80% of max): Consider increasing instance class
         
         SCALING LOGIC:
-        - For high CPU/Memory/IOPS: Upgrade instance class (e.g., db.t3.micro → db.t3.small → db.t3.medium)
+        - For high CPU/Memory/IOPS: Upgrade instance class (e.g., db.t3.micro → db.t3.small → db.t3.medium → db.t3.large)
+        - For low utilization: Downgrade instance class (e.g., db.t3.large → db.t3.medium → db.t3.small → db.t3.micro)
         - For storage issues: Increase allocatedStorage by 20GB increments
-        - Only scale up, never scale down automatically for safety
+        - Scale up when resources are constrained, scale down when consistently over-provisioned
+        - DOWNSCALING SAFETY: Only scale down if ALL metrics show low utilization for sustained period:
+          * CPU < 20% for extended time
+          * Memory usage < 40%
+          * Connections < 30% of capacity
+          * No recent scaling events (check annotations for last scaling time)
         
         CRITICAL UPDATE APPROACH:
         - PRESERVE the entire existing resource structure from <composed> section

@@ -44,12 +44,16 @@ spec:
             - Only proceed if no recent analysis or if metrics show significant changes
             
             SCALING TRIGGERS (conservative for cost control):
-            - CPU > 85%: scale up instance class
-            - FreeableMemory < 15%: scale up for memory pressure  
-            - DatabaseConnections > 85% of max: scale up for connection pressure
-            
-            INSTANCE CLASS PROGRESSION:
-            db.t3.micro → db.t3.small → db.t3.medium → db.t3.large
+            - SCALE UP: CPU > 85%, Memory < 15%, Connections > 85%
+            - SCALE DOWN: CPU < 20% AND Memory > 60% AND Connections < 30% for sustained period
+
+            INSTANCE CLASS PROGRESSION (bidirectional):
+            db.t3.micro ↔ db.t3.small ↔ db.t3.medium ↔ db.t3.large
+
+            DOWNSCALING SAFETY:
+            - Only scale down if ALL conditions met for sustained period
+            - Check last-scaled annotation to prevent frequent changes
+            - Ensure minimum 15-minute cooldown between scaling events
             
             REQUIRED OUTPUT FORMAT:
             You must output the XSQLInstance resource in JSON format with ONLY the fields that need to be patched.
