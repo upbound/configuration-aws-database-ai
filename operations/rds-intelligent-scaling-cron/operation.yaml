@@ -10,7 +10,7 @@ spec:
   concurrencyPolicy: Forbid
   successfulHistoryLimit: 5
   failedHistoryLimit: 1
-  
+
   operationTemplate:
     spec:
       mode: Pipeline
@@ -33,16 +33,16 @@ spec:
             and makes scaling decisions based on CloudWatch performance metrics.
           userPrompt: |
             You are analyzing an XSQLInstance resource for potential RDS scaling needs.
-            
+
             SCALING ANALYSIS CRITERIA:
             1. Check performance metrics in status.performanceMetrics
             2. Check current instanceClass in spec.parameters.instanceClass
             3. Check if analysis was done recently (intelligent-scaling annotations)
-            
+
             RATE LIMITING:
             - Skip analysis if "intelligent-scaling/last-analyzed" annotation exists and is < 5 minutes old
             - Only proceed if no recent analysis or if metrics show significant changes
-            
+
             SCALING TRIGGERS (conservative for cost control):
             - SCALE UP: CPU > 85%, Memory < 15%, Connections > 85%
             - SCALE DOWN: CPU < 20% AND Memory > 60% AND Connections < 30% for sustained period
@@ -54,14 +54,14 @@ spec:
             - Only scale down if ALL conditions met for sustained period
             - Check last-scaled annotation to prevent frequent changes
             - Ensure minimum 15-minute cooldown between scaling events
-            
+
             REQUIRED OUTPUT FORMAT:
             You must output the XSQLInstance resource in JSON format with ONLY the fields that need to be patched.
-            
+
             If scaling is needed:
             {
               "apiVersion": "aws.platform.upbound.io/v1alpha1",
-              "kind": "XSQLInstance", 
+              "kind": "XSQLInstance",
               "metadata": {
                 "name": "<exact-resource-name>",
                 "annotations": {
@@ -75,10 +75,10 @@ spec:
                 }
               }
             }
-            
+
             If no scaling is needed:
             {
-              "apiVersion": "aws.platform.upbound.io/v1alpha1", 
+              "apiVersion": "aws.platform.upbound.io/v1alpha1",
               "kind": "XSQLInstance",
               "metadata": {
                 "name": "<exact-resource-name>",
@@ -88,10 +88,10 @@ spec:
                 }
               }
             }
-            
+
             Rules:
             - Use the exact resource name from the input
-            - Only include fields that need to be updated  
+            - Only include fields that need to be updated
             - Use current timestamp in ISO8601 format
             - Provide brief, clear reasoning in annotations
             - Output only the JSON, no explanatory text
