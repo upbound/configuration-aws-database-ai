@@ -12,5 +12,5 @@ del(.[\"kubectl.kubernetes.io/last-applied-configuration\"])'"
 del(.["kubectl.kubernetes.io/last-applied-configuration"])'
 
     echo ""
-    sleep 15
+    sleep 45
 done
