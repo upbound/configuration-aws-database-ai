@@ -13,7 +13,7 @@ spec:
   pipeline:
   - step: xsqlinstance
     functionRef:
-      name: upbound-configuration-aws-databasexsqlinstance
+      name: upbound-configuration-aws-database-aixsqlinstance
   - step: fetch-metrics
     functionRef:
       name: upbound-function-rds-metrics
