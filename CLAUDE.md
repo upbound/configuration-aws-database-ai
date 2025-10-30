@@ -4,142 +4,173 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an Upbound Crossplane configuration for AWS databases that provides a foundational setup for deploying and managing RDS instances. The configuration uses pipeline-mode composition with embedded KCL functions to create a custom XSQLInstance API that supports both PostgreSQL and MariaDB engines.
+This is an **AI-powered Crossplane configuration for AWS databases** that combines traditional infrastructure-as-code with intelligent, automated scaling capabilities. The project provides a foundational setup for deploying and managing RDS instances that can automatically scale based on CloudWatch metrics analyzed by Claude AI.
 
 ## Architecture
 
-### Core Structure
-- **XRD (CompositeResourceDefinition)**: `apis/definition.yaml` defines the XSQLInstance custom resource API with connection secret keys (username, password, endpoint, host)
-- **Composition**: `apis/composition.yaml` uses pipeline-mode with embedded KCL function and auto-ready function
-- **Embedded Function**: `functions/xsqlinstance/main.k` contains KCL logic that creates RDS SubnetGroup and Instance resources
-- **Tests**: `tests/test-xsqlinstance/` and `tests/e2etest-xsqlinstance/` contain KCL composition tests
-- **Examples**: `examples/mariadb-xr.yaml` and `examples/postgres-xr.yaml` provide sample configurations
+### Core Components
+- **XRD (CompositeResourceDefinition)**: `apis/definition.yaml` defines the XSQLInstance API with support for PostgreSQL and MariaDB engines
+- **Multiple Composition Modes**:
+  * Standard composition: `apis/composition.yaml` - Basic RDS deployment
+  * Intelligent composition: `apis/composition-intelligent.yaml` - AI-driven scaling with Claude analysis
+  * RDS metrics composition: `apis/composition-rds-metrics.yaml` - CloudWatch metrics integration
+- **Embedded Function**: `functions/xsqlinstance/main.k` contains KCL logic for RDS SubnetGroup and Instance creation
+- **AI Pipeline**: Uses `function-rds-metrics` → `function-claude` for intelligent scaling decisions
+- **Crossplane Operations**: `operations/` directory contains CronOperation for scheduled scaling analysis
 
-### Key Components
-- **XSQLInstance API**: Custom resource supporting postgres/mariadb engines with configurable storage, networking, and authentication
-- **Network Integration**: References external network configurations via networkRef.id selector
-- **Secret Management**: Supports both password secret references and auto-generated passwords
-- **Connection Secrets**: Automatically exposes database connection details (endpoint, host, username, password)
+### Intelligent Scaling Pipeline
+The AI-powered scaling system uses a 3-stage pipeline:
+1. **Metrics Collection**: `function-rds-metrics` fetches CloudWatch data (CPU, memory, IOPS, connections)
+2. **AI Analysis**: `function-claude` evaluates metrics against scaling thresholds using Claude Sonnet 4.0
+3. **Resource Updates**: Dynamically scales instance class or storage based on AI recommendations
+
+### Key Features
+- **Multi-Engine Support**: PostgreSQL and MariaDB with configurable versions
+- **Network Integration**: References external network configurations via `networkRef.id`
+- **Intelligent Scaling**: AI-driven scaling decisions with full audit trails
+- **Operations Integration**: Crossplane v2.0 Operations for scheduled and reactive scaling
+- **Connection Secrets**: Automatic exposure of connection details (endpoint, host, username, password)
 
 ## Development Commands
 
 ### Core Upbound DevEx Workflow
 ```bash
-# Build the project and package functions
-up project build
+# Build and deploy the configuration
+up project build && up project run
 
-# Deploy the configuration to control plane
-up project run
-
-# Test composition rendering with examples
+# Test composition rendering for different modes
 up composition render --xrd=apis/definition.yaml apis/composition.yaml examples/mariadb-xr.yaml
-up composition render --xrd=apis/definition.yaml apis/composition.yaml examples/postgres-xr.yaml
+up composition render --xrd=apis/definition.yaml apis/composition-intelligent.yaml examples/mariadb-xr-intelligent.yaml
+up composition render --xrd=apis/definition.yaml apis/composition-rds-metrics.yaml examples/mariadb-xr-rds-metrics.yaml
 
 # Run composition tests
-up test run tests/*
-
-# Run end-to-end tests  
-up test run tests/* --e2e
-```
-
-### Testing and Validation Commands
-```bash
-# Render specific database engine compositions
-up composition render --xrd=apis/definition.yaml apis/composition.yaml examples/mariadb-xr.yaml
-up composition render --xrd=apis/definition.yaml apis/composition.yaml examples/postgres-xr.yaml
-
-# Run unit tests for composition logic
 up test run tests/test-xsqlinstance/
-
-# Run e2e tests with actual cloud resources
 up test run tests/e2etest-xsqlinstance/ --e2e
 ```
 
-## Key Files
+### AI Scaling System Setup
+```bash
+# Deploy Claude API credentials (required for intelligent scaling)
+kubectl create secret generic claude \
+  --from-literal=ANTHROPIC_API_KEY=your-api-key \
+  -n crossplane-system
 
-- `upbound.yaml`: Project metadata with dependencies on provider-aws-rds and configuration-aws-network
-- `apis/definition.yaml`: XSQLInstance XRD with engine selection (postgres/mariadb), storage, networking, and authentication parameters
-- `apis/composition.yaml`: Pipeline composition referencing embedded xsqlinstance function and auto-ready function
-- `functions/xsqlinstance/main.k`: KCL function creating RDS SubnetGroup and Instance with network integration
-- `examples/`: MariaDB and PostgreSQL example XRs showing typical usage patterns
-- `tests/`: KCL-based composition tests validating rendered resources match expected output
+# Deploy with operations (includes CronOperation for scheduled scaling)
+up project run  # Automatically includes operations/ directory
 
-## Function Implementation Details
+# Monitor scaling operations
+kubectl get cronoperation,operation -n crossplane-system --watch
+```
 
-### XSQLInstance Function Logic (`functions/xsqlinstance/main.k`)
-- Creates RDS SubnetGroup with network selector matching networkRef.id
-- Creates RDS Instance with configurable engine (postgres/mariadb), storage, and authentication
-- Uses network security group and subnet selectors for proper VPC integration
+### Load Testing for Scaling Validation
+```bash
+# MySQL/MariaDB CPU stress test to trigger AI scaling
+for i in {1..8}; do
+    mysql \
+      --host=your-rds-endpoint.region.rds.amazonaws.com \
+      --user=masteruser \
+      --password=your-password \
+      --execute="SELECT BENCHMARK(1000000000, MD5('trigger_scaling_$i'));" &
+done
+
+# Monitor scaling decisions and instance changes
+kubectl get xsqlinstance your-db-name -o jsonpath='{.status.claudeDecision}' | jq .
+kubectl get instance.rds -l crossplane.io/composite=your-db-name -o jsonpath='{.items[0].spec.forProvider.instanceClass}'
+```
+
+## Key Files and Architecture
+
+### Function Implementation (`functions/xsqlinstance/main.k`)
+- Creates RDS SubnetGroup with network label selectors matching `networkRef.id`
+- Creates RDS Instance with configurable engine, storage, authentication, and networking
 - Handles both auto-generated passwords and secret references
-- Exports connection details (endpoint, host, username, password) via CompositeConnectionDetails
+- Exports connection details via CompositeConnectionDetails
 
-### Resource Dependencies
-- Depends on `configuration-aws-network` v0.24.0 for networking infrastructure
-- Uses `provider-aws-rds` v1 for RDS resource management
-- Requires `function-auto-ready` for composition readiness management
+### Intelligent Compositions
+- **Standard**: Basic RDS deployment with auto-ready function
+- **Intelligent**: Adds `function-rds-metrics` and `function-claude` for AI scaling
+- **RDS Metrics**: Metrics collection without AI analysis
 
-## Testing Architecture
+### Test Coverage (`tests/`)
+- **Unit Tests**: `test-xsqlinstance/main.k` validates resource creation for MariaDB and PostgreSQL
+- **E2E Tests**: `e2etest-xsqlinstance/main.k` performs full cloud deployment testing
+- **Test Structure**: Uses `CompositionTest` resources with 60-second timeouts
 
-### Comprehensive Test Coverage (`tests/test-xsqlinstance/main.k`)
-**MariaDB and PostgreSQL Tests validate:**
-- RDS SubnetGroup with network integration 
-- RDS Instance with standard configuration (db.t3.micro, auto-generated passwords)
-- Proper resource annotations, labels, and owner references
-- Network integration via label selectors
-- Auto-generated and referenced password configurations
+### Operations Integration (`operations/`)
+- **CronOperation**: Scheduled scaling analysis every 10 minutes for resources with `scale: me` label
+- **Rate Limiting**: 5-minute cooldown to prevent scaling thrash
+- **Conservative Scaling**: CPU >85%, Memory <15%, Connections >85% thresholds
+- **Instance Progression**: `db.t3.micro → db.t3.small → db.t3.medium → db.t3.large`
 
-### Test Structure
-- Uses `CompositionTest` resources with 60-second timeout
-- Validation disabled for faster testing
-- Tests cover both MariaDB (10.11) and PostgreSQL (13.18) engines
-- Tests verify proper secret handling and connection details
+## Dependencies and Integration
 
-### Expected Resource Output  
-Each XSQLInstance creates:
-1. **RDS SubnetGroup** with network-id label selector
-2. **RDS Instance** with standard monitoring and networking configuration
-3. **CompositeConnectionDetails** with database connection information (endpoint, host, username, password)
+### Required Dependencies (`upbound.yaml`)
+- **provider-aws-rds**: v1 - RDS resource management
+- **configuration-aws-network**: v0.25.0-rc4-yury - Network infrastructure
+- **function-auto-ready**: Composition readiness management
+- **function-claude**: v0.2.0 - AI analysis and scaling decisions
+- **function-rds-metrics**: v0.0.6 - CloudWatch metrics collection
 
-## Configuration Parameters
+### API Parameters
+- **Required**: `region`, `engine`, `engineVersion`, `storageGB`, `networkRef.id`, `passwordSecretRef`
+- **Optional**: `instanceClass` (default: db.t3.micro), `autoGeneratePassword`, `publiclyAccessible`, `deletionPolicy`
+- **AI Status Fields**: `performanceMetrics`, `claudeDecision` with reasoning and timestamps
 
-### Required XSQLInstance Parameters
-- `region`: AWS region for resource deployment
-- `engine`: Database engine (postgres or mariadb)
-- `engineVersion`: Specific engine version string
-- `storageGB`: Allocated storage in GB
-- `networkRef.id`: Reference to network configuration
-- `passwordSecretRef`: Secret reference for database password (namespace, name, key)
+## Scaling Decision Process
 
-### Optional Parameters
-- `deletionPolicy`: Delete or Orphan (defaults to Delete)
-- `providerConfigName`: Crossplane ProviderConfig name (defaults to "default")  
-- `autoGeneratePassword`: Enable automatic password generation
+### Input: CloudWatch Metrics
+```yaml
+performanceMetrics:
+  metrics:
+    CPUUtilization: { value: 1.98, unit: "Percent" }
+    DatabaseConnections: { value: 0, unit: "Count" }
+    FreeStorageSpace: { value: 2775404544, unit: "Bytes" }
+```
 
-## Intelligent Scaling Integration
+### AI Analysis Thresholds
+- **CPU >80%**: Scale up instance class
+- **Memory <20% free**: Memory-optimized instance
+- **IOPS >80%**: Increase storage or instance class
+- **Connections >80%**: Larger instance class
 
-This configuration is designed to work with the `function-rds-metrics` prototype for intelligent scaling capabilities.
+### Output: Structured Decision
+```yaml
+status:
+  claudeDecision:
+    reasoning: "CPU utilization at 1.98% is well below 80% threshold..."
+    timestamp: "2025-07-29T22:05:18Z"
+```
 
-### Scaling Architecture
-- **Pure Function Approach**: Uses `function-rds-metrics` Crossplane function to directly pull CloudWatch metrics
-- **Proactive Scaling**: Function evaluates metrics and makes scaling decisions within the composition pipeline
-- **No External Dependencies**: Eliminates need for CloudWatch alarms, SNS topics, or Lambda functions
+## Production Usage Patterns
 
-### Scaling Parameters
-The following RDS parameters can be dynamically scaled:
-- **instanceClass**: Vertical scaling (db.t3.micro → db.t3.small → db.t3.medium, etc.)
-- **allocatedStorage**: Storage expansion (minimum increments vary by storage type)
-- **iops**: IOPS scaling (for provisioned IOPS storage)
-- **storageType**: Storage type migration (gp2 → gp3 → io1/io2)
+### Standard Database Deployment
+Use `apis/composition.yaml` for basic RDS instances without AI scaling.
 
-### Metrics Integration
-Standard CloudWatch metrics evaluated by the function:
-- **CPUUtilization**: Threshold 70% for scale-up trigger
-- **DatabaseConnections**: 80% of max_connections for connection pressure
-- **FreeableMemory**: Monitor memory pressure for instance scaling
-- **FreeStorageSpace**: Monitor storage utilization for storage scaling
+### AI-Powered Intelligent Scaling
+Use `apis/composition-intelligent.yaml` with Claude API credentials for automated scaling based on real-time analysis.
 
-### Test Load Generation
-For e2e testing and demos, use tools like:
-- **pgbench** (PostgreSQL): `pgbench -h <endpoint> -U masteruser -c 10 -t 1000 upbound`
-- **mysqlslap** (MariaDB): `mysqlslap --host=<endpoint> --user=masteruser --concurrency=10 --iterations=100`
-- **sysbench**: Multi-engine load testing tool
+### Operations-Based Scaling
+Deploy with `up project run` to enable scheduled scaling analysis via Crossplane Operations.
+
+### Monitoring and Observability
+- **Scaling Decisions**: Captured in XSQLInstance `status.claudeDecision`
+- **Performance Metrics**: Available in `status.performanceMetrics`
+- **Audit Trail**: Full reasoning preserved for compliance
+- **Cost Tracking**: ~$0.06-0.12 per scaling decision with Claude API
+
+## Critical Implementation Notes
+
+### AI Function Configuration
+- **Token Limits**: Uses 8192 max tokens for handling complex YAML resources
+- **Context Flow**: Metrics passed via `contextFields: ["performanceMetrics"]`
+- **Safety**: Only scales up to prevent accidental downsizing
+- **Schema Validation**: Returns clean desired spec without system fields
+
+### Network Integration
+- Requires `configuration-aws-network` for VPC, subnets, and security groups
+- Uses label selectors with `networks.aws.platform.upbound.io/network-id` matching
+
+### Secret Management
+- Supports both referenced secrets and auto-generated passwords
+- Connection secrets written to `upbound-system` namespace by default
+- Claude API key must be stored as `claude` secret in `crossplane-system` namespace

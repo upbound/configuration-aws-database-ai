@@ -1,8 +1,0 @@
-apiVersion: aws.platform.upbound.io/v1alpha1
-kind: XNetwork
-metadata:
-  name: configuration-aws-database
-spec:
-  parameters:
-    id: configuration-aws-database
-    region: us-west-2

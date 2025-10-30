@@ -1,7 +1,7 @@
 apiVersion: aws.platform.upbound.io/v1alpha1
 kind: SQLInstance
 metadata:
-  name: rds-metrics-database-ai-mysql
+  name: rds-metrics-database-ai-postgres
   namespace: default
   labels:
     scale: me
@@ -12,14 +12,12 @@ spec:
         type: rds-metrics
   parameters:
     region: us-west-2
-    engine: mariadb
-    engineVersion: "10.11"
+    engine: postgres
+    engineVersion: "13.18"
     storageGB: 5
     instanceClass: db.t3.micro
-    autoGeneratePassword: true
-    publiclyAccessible: true  # Temporarily for stress testing
     passwordSecretRef:
-      name: mariadbsecret
+      name: psqlsecret
       key: password
     networkRef:
       id: rds-metrics-database-ai-scale

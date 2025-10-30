@@ -7,7 +7,7 @@ spec:
   - apiVersion: pkg.crossplane.io/v1
     kind: Provider
     package: xpkg.upbound.io/upbound/provider-aws-rds
-    version: v1
+    version: v2
   - apiVersion: pkg.crossplane.io/v1
     kind: Configuration
     package: xpkg.upbound.io/upbound/configuration-aws-network
@@ -23,7 +23,7 @@ spec:
   - apiVersion: pkg.crossplane.io/v1beta1
     kind: Function
     package: xpkg.upbound.io/upbound/function-rds-metrics
-    version: v0.0.6
+    version: v0.0.7
   description: This repository provides a foundational configuration to build and
     operate an AWS database, including handling its dependencies and configurations.
     The setup ensures a streamlined and repeatable deployment in a cloud environment.

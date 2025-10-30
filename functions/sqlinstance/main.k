@@ -1,15 +1,18 @@
-import models.io.upbound.aws.rds.v1beta1 as rdsv1beta1
+import models.io.upbound.awsm.rds.v1beta1 as rdsv1beta1
 import models.io.upbound.platform.aws.v1alpha1 as platformawsv1alpha1
 
 import base64
 
-oxr = platformawsv1alpha1.XSQLInstance{**option("params").oxr} # observed composite resource
+oxr = platformawsv1alpha1.SQLInstance{**option("params").oxr} # observed composite resource
 ocds = option("params").ocds # observed composite resource
 oxrParams = oxr.spec.parameters
 
 defaultSpec = {
-    providerConfigRef.name = oxr.spec.parameters.providerConfigName or "default"
-    deletionPolicy = oxr.spec.parameters.deletionPolicy
+    providerConfigRef = {
+        kind = "ProviderConfig"
+        name = oxr.spec.parameters.providerConfigName or "default"
+    }
+    managementPolicies = oxr.spec.parameters.managementPolicies or ["*"]
     forProvider.region = oxr.spec.parameters.region
 }
 
@@ -36,7 +39,7 @@ _items = [
         }
     }
     rdsv1beta1.Instance{
-        metadata: _metadata("rds-instance-small")
+        metadata: _metadata("rds-instance")
         spec: defaultSpec | {
             forProvider: {
                 dbName = "upbound"
@@ -54,16 +57,15 @@ _items = [
                     "networks.aws.platform.upbound.io/network-id" = oxrParams.networkRef.id
                 }
                 autoGeneratePassword = oxrParams.autoGeneratePassword
+                # V2: passwordSecretRef no longer has namespace field (inferred from resource namespace)
                 passwordSecretRef = {
                     name = oxrParams.passwordSecretRef.name
-                    namespace = oxrParams.passwordSecretRef.namespace
                     key = oxrParams.passwordSecretRef.key
-
                 }
             }
+            # V2: writeConnectionSecretToRef no longer has namespace field (written to resource namespace)
             writeConnectionSecretToRef = {
                 name = "{}-sql".format(oxr.metadata.uid)
-                namespace = oxr.spec.writeConnectionSecretToRef.namespace
             }
         }
     }

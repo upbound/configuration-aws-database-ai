@@ -1,20 +1,13 @@
-apiVersion: apiextensions.crossplane.io/v1
+apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
 metadata:
-  name: xsqlinstances.aws.platform.upbound.io
+  name: sqlinstances.aws.platform.upbound.io
 spec:
-  claimNames:
-    kind: SQLInstance
-    plural: sqlinstances
-  connectionSecretKeys:
-    - username
-    - password
-    - endpoint
-    - host
+  scope: Namespaced
   group: aws.platform.upbound.io
   names:
-    kind: XSQLInstance
-    plural: xsqlinstances
+    kind: SQLInstance
+    plural: sqlinstances
   versions:
     - name: v1alpha1
       served: true
@@ -32,13 +25,18 @@ spec:
                     region:
                       type: string
                       description: Region is the region you'd like your resource to be created in.
-                    deletionPolicy:
-                      description: Delete the external resources when the Claim/XR is deleted. Defaults to Delete
-                      enum:
-                        - Delete
-                        - Orphan
-                      type: string
-                      default: Delete
+                    managementPolicies:
+                      description: ManagementPolicies for the RDS resources. Defaults to ["*"] which includes all operations (Create, Observe, Update, Delete). To orphan resources on deletion, use ["Create", "Observe", "Update"].
+                      type: array
+                      items:
+                        type: string
+                        enum:
+                          - "*"
+                          - Create
+                          - Observe
+                          - Update
+                          - Delete
+                      default: ["*"]
                     providerConfigName:
                       description: Crossplane ProviderConfig to use for provisioning this resources
                       type: string
@@ -60,16 +58,16 @@ spec:
                       default: "db.t3.micro"
                     passwordSecretRef:
                       type: object
-                      description: "A reference to the Secret object containing database password"
+                      description: "A reference to the Secret object containing database password. In v2, namespace is inferred from the resource namespace."
                       properties:
                         namespace:
                           type: string
+                          description: "Deprecated in v2 - namespace is now inferred from resource namespace"
                         name:
                           type: string
                         key:
                           type: string
                       required:
-                        - namespace
                         - name
                         - key
                     autoGeneratePassword:

@@ -4,16 +4,16 @@ metadata:
   labels:
     provider: aws
     type: rds-metrics
-  name: xsqlinstances-rds-metrics.aws.platform.upbound.io
+  name: sqlinstances-rds-metrics.aws.platform.upbound.io
 spec:
   compositeTypeRef:
     apiVersion: aws.platform.upbound.io/v1alpha1
-    kind: XSQLInstance
+    kind: SQLInstance
   mode: Pipeline
   pipeline:
-  - step: xsqlinstance
+  - step: sqlinstance
     functionRef:
-      name: upbound-configuration-aws-database-aixsqlinstance
+      name: upbound-configuration-aws-database-aisqlinstance
   - step: fetch-metrics
     functionRef:
       name: upbound-function-rds-metrics

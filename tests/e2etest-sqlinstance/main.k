@@ -1,15 +1,15 @@
-import models.io.upbound.aws.v1beta1 as awsv1beta1
+import models.io.upbound.awsm.v1beta1 as awsv1beta1
 import models.io.upbound.dev.meta.v1alpha1 as metav1alpha1
 import models.io.upbound.platform.aws.v1alpha1 as platformawsv1alpha1
 
 _items = [
     metav1alpha1.E2ETest{
-        metadata.name: "xsqlinstances"
+        metadata.name: "sqlinstances"
         spec= {
             crossplane.autoUpgrade.channel: "Rapid"
             defaultConditions: ["Ready"]
             manifests: [
-                platformawsv1alpha1.XSQLInstance{
+                platformawsv1alpha1.SQLInstance{
                     metadata = {
                         name = "configuration-aws-database-mariadb"
                     }
@@ -21,7 +21,6 @@ _items = [
                             storageGB = 5
                             autoGeneratePassword = True
                             passwordSecretRef = {
-                                namespace = "default"
                                 name = "mariadbsecret"
                                 key = "password"
                             }
@@ -29,13 +28,9 @@ _items = [
                                 id = "configuration-aws-database"
                             }
                         }
-                        writeConnectionSecretToRef = {
-                            name = "configuration-aws-database-mariadb"
-                            namespace = "default"
-                        }
                     }
                 }
-                platformawsv1alpha1.XSQLInstance{
+                platformawsv1alpha1.SQLInstance{
                     metadata = {
                         name = "configuration-aws-database-postgres"
                     }
@@ -47,17 +42,12 @@ _items = [
                             storageGB = 5
                             autoGeneratePassword = True
                             passwordSecretRef = {
-                                namespace = "default"
                                 name = "psqlsecret"
                                 key = "password"
                             }
                             networkRef = {
                                 id = "configuration-aws-database"
                             }
-                        }
-                        writeConnectionSecretToRef = {
-                            name = "configuration-aws-database-postgres"
-                            namespace = "default"
                         }
                     }
                 }
