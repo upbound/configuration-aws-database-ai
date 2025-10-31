@@ -26,7 +26,7 @@ spec:
                       type: string
                       description: Region is the region you'd like your resource to be created in.
                     managementPolicies:
-                      description: ManagementPolicies for the RDS resources. Defaults to ["*"] which includes all operations (Create, Observe, Update, Delete). To orphan resources on deletion, use ["Create", "Observe", "Update"].
+                      description: ManagementPolicies for the RDS resources. Defaults to ["*"] which includes all operations (Create, Observe, Update, Delete, LateInitialize). To orphan resources on deletion, use ["Create", "Observe", "Update", "LateInitialize"].
                       type: array
                       items:
                         type: string
@@ -36,6 +36,7 @@ spec:
                           - Observe
                           - Update
                           - Delete
+                          - LateInitialize
                       default: ["*"]
                     providerConfigName:
                       description: Crossplane ProviderConfig to use for provisioning this resources

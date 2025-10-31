@@ -102,7 +102,15 @@ defaultSpec = {
 
 **Migration Path:**
 - Default behavior (`deletionPolicy: Delete`) → `managementPolicies: ["*"]`
-- Orphan behavior (`deletionPolicy: Orphan`) → `managementPolicies: ["Create", "Observe", "Update"]`
+- Orphan behavior (`deletionPolicy: Orphan`) → `managementPolicies: ["Create", "Observe", "Update", "LateInitialize"]`
+
+**Available Management Policies:**
+- `*` - All management policies (default)
+- `Create` - Create the external resource
+- `Observe` - Observe the external resource
+- `Update` - Update the external resource
+- `Delete` - Delete the external resource
+- `LateInitialize` - Initialize unset fields from external resource values
 
 **XRD Schema Update:**
 ```yaml
@@ -110,7 +118,7 @@ parameters:
   type: object
   properties:
     managementPolicies:
-      description: ManagementPolicies for the RDS resources. Defaults to ["*"] which includes all operations (Create, Observe, Update, Delete). To orphan resources on deletion, use ["Create", "Observe", "Update"].
+      description: ManagementPolicies for the RDS resources. Defaults to ["*"] which includes all operations (Create, Observe, Update, Delete, LateInitialize). To orphan resources on deletion, use ["Create", "Observe", "Update", "LateInitialize"].
       type: array
       items:
         type: string
@@ -120,6 +128,7 @@ parameters:
           - Observe
           - Update
           - Delete
+          - LateInitialize
       default: ["*"]
 ```
 
