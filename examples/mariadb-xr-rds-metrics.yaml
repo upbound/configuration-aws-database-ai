@@ -2,7 +2,7 @@ apiVersion: aws.platform.upbound.io/v1alpha1
 kind: SQLInstance
 metadata:
   name: rds-metrics-database-ai-mysql
-  namespace: default
+  namespace: database-team
   labels:
     scale: me
 spec:

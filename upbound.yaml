@@ -3,6 +3,10 @@ kind: Project
 metadata:
   name: configuration-aws-database-ai
 spec:
+  apiDependencies:
+  - k8s:
+      version: v1.33.0
+    type: k8s
   dependsOn:
   - apiVersion: pkg.crossplane.io/v1
     kind: Provider
@@ -11,7 +15,7 @@ spec:
   - apiVersion: pkg.crossplane.io/v1
     kind: Configuration
     package: xpkg.upbound.io/upbound/configuration-aws-network
-    version: v0.25.0-rc4-yury
+    version: v0.26.0-rc1-yury
   - apiVersion: pkg.crossplane.io/v1
     kind: Function
     package: xpkg.upbound.io/crossplane-contrib/function-auto-ready

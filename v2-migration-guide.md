@@ -226,10 +226,16 @@ spec:
 
 All "Crossplane machinery" fields move under `spec.crossplane` to distinguish Crossplane-specific configuration from user-facing parameters.
 
-### 7. writeConnectionSecretToRef No Longer in XR Spec
+### 7. Connection Secrets Completely Rearchitected in v2
+
+**⚠️ CRITICAL BREAKING CHANGE**: Crossplane v2 removes built-in connection secret support from XRs entirely. This is one of the most significant architectural changes in v2.
+
+#### What Changed
 
 **Before (v1):**
 ```yaml
+apiVersion: aws.platform.upbound.io/v1alpha1
+kind: XSQLInstance
 spec:
   parameters:
     region: us-west-2
@@ -238,16 +244,200 @@ spec:
     namespace: default
 ```
 
+XRs had built-in `spec.writeConnectionSecretToRef` that automatically created a Kubernetes Secret with aggregated connection details from all composed resources.
+
 **After (v2):**
 ```yaml
+apiVersion: aws.platform.upbound.io/v1alpha1
+kind: SQLInstance
+metadata:
+  namespace: default
 spec:
   parameters:
     region: us-west-2
-  # writeConnectionSecretToRef removed from user-facing spec
-  # Connection secrets handled automatically by Crossplane
+  # writeConnectionSecretToRef completely removed - not supported in v2 XRs
 ```
 
-The v2 XRD schema generator removes `writeConnectionSecretToRef` from the composite resource spec. Connection secret handling is now managed internally by Crossplane.
+**The field is gone.** There is no automatic connection secret creation for v2 XRs.
+
+#### The v2 Philosophy
+
+According to [crossplane/crossplane#6440](https://github.com/crossplane/crossplane/issues/6440), Crossplane v2 shifts to representing higher-level abstractions (complete applications) rather than low-level infrastructure. Connection secrets are no longer a built-in feature because:
+
+1. Not all XRs need to expose connection details
+2. Different use cases need different secret structures
+3. Functions provide more flexibility for secret composition
+
+#### Migration Path: Manually Compose Secrets
+
+The official guidance from Nic Cope (Crossplane maintainer):
+
+> "In v2 you can recreate it using functions - just have your XR compose a secret with the XR's connection details in it."
+
+This means your **function must explicitly create a Kubernetes Secret resource** containing the connection details.
+
+#### Implementation Example
+
+**Step 1: Managed resources still support connection secrets**
+
+```kcl
+rdsv1beta1.Instance{
+    metadata: _metadata("rds-instance")
+    spec: {
+        forProvider: {
+            engine = "postgres"
+            username = "masteruser"
+            # ... other config
+        }
+        # Managed resources can still write connection secrets
+        writeConnectionSecretToRef = {
+            name = "{}-rds-conn".format(oxr.metadata.name)
+        }
+    }
+}
+```
+
+This creates a Secret with raw RDS credentials that the function can read via `ocds["rds-instance"].ConnectionDetails`.
+
+**Step 2: Function composes a user-facing Secret**
+
+```kcl
+import models.io.k8s.api.core.v1 as corev1
+
+# V2: Manually compose a Kubernetes Secret with connection details
+corev1.Secret{
+    metadata: _metadata("connection-secret") | {
+        name: "{}-connection".format(oxr.metadata.name)
+        namespace: oxr.metadata.namespace
+        labels: {
+            "crossplane.io/composite": oxr.metadata.name
+        }
+    }
+    type: "connection.crossplane.io/v1alpha1"
+    if "rds-instance" in ocds:
+        data: {
+            # Base64-encode all values except password (already encoded)
+            endpoint: base64.encode(ocds["rds-instance"].Resource?.status?.atProvider?.endpoint or "")
+            host: base64.encode(ocds["rds-instance"].Resource?.status?.atProvider?.address or "")
+            port: base64.encode(str(ocds["rds-instance"].Resource?.status?.atProvider?.port or 3306))
+            username: base64.encode(ocds["rds-instance"].Resource?.spec?.forProvider?.username or "")
+            # Password comes from managed resource's connection secret
+            password: ocds["rds-instance"].ConnectionDetails?.password or ""
+        }
+    else:
+        data: {}
+}
+```
+
+**Note**: Add Kubernetes API dependency to `upbound.yaml` to generate Secret models:
+
+```yaml
+apiVersion: meta.dev.upbound.io/v2alpha1
+kind: Project
+spec:
+  apiDependencies:
+  - k8s:
+      version: v1.33.0
+    type: k8s
+```
+
+Then run `up project build` to generate models in `.up/kcl/models/io/k8s/api/core/v1/Secret.k`.
+
+**Step 3: Users reference the composed Secret**
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app
+spec:
+  containers:
+  - name: app
+    env:
+    - name: DB_HOST
+      valueFrom:
+        secretKeyRef:
+          name: my-database-connection  # {sqlinstance-name}-connection
+          key: host
+```
+
+#### What About CompositeConnectionDetails?
+
+❌ **DON'T USE** `CompositeConnectionDetails` for v2:
+
+```kcl
+# This is NOT sufficient in v2!
+{
+    apiVersion: "meta.krm.kcl.dev/v1alpha1"
+    kind: "CompositeConnectionDetails"
+    data: {
+        endpoint = ocds["rds-instance"].Resource?.status?.atProvider?.endpoint
+    }
+}
+```
+
+`CompositeConnectionDetails` only exposes data in the XR's `.status.connectionDetails` field. It does **NOT** create a Kubernetes Secret that applications can reference.
+
+#### Architecture Comparison
+
+**v1 Built-in:**
+```
+XR (writeConnectionSecretToRef)
+  └─> Crossplane creates Secret automatically ✅
+```
+
+**v2 Function-based:**
+```
+XR (no built-in support)
+  └─> Function generates:
+      ├─> Managed Resource (writeConnectionSecretToRef)
+      │     └─> Creates Secret with raw credentials
+      └─> Kubernetes Secret resource (manually composed) ✅
+            └─> Aggregates connection details for user consumption
+```
+
+#### XRD Schema Changes
+
+Remove connection secret fields from the XRD:
+
+```yaml
+# v1 XRD - REMOVE THESE
+spec:
+  connectionSecretKeys:
+    - username
+    - password
+    - endpoint
+    - port
+
+  # In openAPIV3Schema
+  spec:
+    properties:
+      writeConnectionSecretToRef:  # REMOVE
+        type: object
+        properties:
+          name:
+            type: string
+          namespace:
+            type: string
+```
+
+```yaml
+# v2 XRD - No connection secret fields
+spec:
+  scope: Namespaced
+  # connectionSecretKeys removed
+  # No writeConnectionSecretToRef in schema
+```
+
+#### Documentation Gap
+
+⚠️ **Warning**: As noted in [crossplane/docs#1001](https://github.com/crossplane/docs/issues/1001), this breaking change is poorly documented:
+
+- No official migration guide exists yet
+- The only "documentation" is scattered GitHub issue comments
+- Users discover this during migration, often causing confusion
+
+This guide provides the first comprehensive documentation of this change.
 
 ## Migration Checklist
 
@@ -287,8 +477,14 @@ oxr = platformawsv1alpha1.SQLInstance{**option("params").oxr}
 - [ ] Update `providerConfigRef` to include `kind` field
 - [ ] Replace `deletionPolicy` with `managementPolicies`
 - [ ] Remove `namespace` from `passwordSecretRef`
-- [ ] Remove `namespace` from `writeConnectionSecretToRef`
+- [ ] Remove `namespace` from `writeConnectionSecretToRef` (on managed resources)
 - [ ] Update all `XSQLInstance` references to `SQLInstance`
+- [ ] **CRITICAL**: Replace `CompositeConnectionDetails` with manually composed Kubernetes Secret
+  - Add `import base64` to function
+  - Create a `v1/Secret` resource in function output
+  - Populate `data` fields with base64-encoded connection details from `ocds`
+  - Use `ocds["resource-name"].ConnectionDetails.password` for password
+  - Use `ocds["resource-name"].Resource?.status?.atProvider?.field` for other fields
 
 ### Step 5: Update Compositions
 
@@ -381,11 +577,63 @@ spec:
         type: rds-metrics
 ```
 
-### Error: "Cannot add member 'writeConnectionSecretToRef'"
+### Error: "Cannot add member 'writeConnectionSecretToRef'" (in XR spec)
 
-**Cause:** v2 XRD schema removes this from user-facing spec.
+**Cause:** v2 XRD schema removes `writeConnectionSecretToRef` from XR specs entirely.
 
-**Solution:** Remove from XR examples and test assertions. Connection secrets are handled automatically.
+**Solution:**
+1. Remove from XR examples and test assertions
+2. Implement manual Secret composition in your function (see Section 7)
+3. Keep `writeConnectionSecretToRef` on managed resources - that's still supported
+
+### Error: "Connection secrets not being created"
+
+**Cause:** Migrated from v1 but didn't implement manual Secret composition.
+
+**Symptoms:**
+- No Secret created for the XR
+- Applications can't find connection details
+- Only managed resources have connection secrets
+
+**Solution:** Implement function-based Secret composition:
+
+```kcl
+import base64
+
+_items = [
+    # ... your managed resources with writeConnectionSecretToRef ...
+
+    # Add this: Manually compose connection Secret
+    {
+        apiVersion: "v1"
+        kind: "Secret"
+        metadata: _metadata("connection-secret") | {
+            name: "{}-connection".format(oxr.metadata.name)
+            namespace: oxr.metadata.namespace
+        }
+        type: "connection.crossplane.io/v1alpha1"
+        if "your-managed-resource-name" in ocds:
+            data: {
+                endpoint: base64.encode(ocds["resource-name"].Resource?.status?.atProvider?.endpoint or "")
+                password: ocds["resource-name"].ConnectionDetails?.password or ""
+                # ... other fields
+            }
+        else:
+            data: {}
+    }
+]
+```
+
+### Error: "CompositeConnectionDetails not creating a Secret"
+
+**Cause:** `CompositeConnectionDetails` only updates XR status, it doesn't create a Kubernetes Secret.
+
+**Symptoms:**
+- Data appears in `kubectl get xr -o yaml` under `status.connectionDetails`
+- No Secret resource created
+- Applications can't reference the data
+
+**Solution:** Replace `CompositeConnectionDetails` with a manually composed `v1/Secret` resource (see Section 7).
 
 ## Testing Strategy
 

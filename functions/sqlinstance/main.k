@@ -1,5 +1,6 @@
 import models.io.upbound.awsm.rds.v1beta1 as rdsv1beta1
 import models.io.upbound.platform.aws.v1alpha1 as platformawsv1alpha1
+import models.io.k8s.api.core.v1 as corev1
 
 import base64
 
@@ -63,21 +64,30 @@ _items = [
                     key = oxrParams.passwordSecretRef.key
                 }
             }
-            # V2: writeConnectionSecretToRef no longer has namespace field (written to resource namespace)
+            # V2: Managed resources can still write connection secrets
             writeConnectionSecretToRef = {
-                name = "{}-sql".format(oxr.metadata.uid)
+                name = "{}-rds-conn".format(oxr.metadata.name)
             }
         }
     }
-    {
-        apiVersion: "meta.krm.kcl.dev/v1alpha1"
-        kind: "CompositeConnectionDetails"
-        if "RDSInstanceSmall" in ocds:
+    # V2: XRs no longer have built-in connection secret support
+    # Manually compose a Kubernetes Secret with connection details
+    corev1.Secret{
+        metadata: _metadata("connection-secret") | {
+            name: "{}-connection".format(oxr.metadata.name)
+            namespace: oxr.metadata.namespace
+            labels: {
+                "crossplane.io/composite": oxr.metadata.name
+            }
+        }
+        type: "connection.crossplane.io/v1alpha1"
+        if "rds-instance" in ocds:
             data: {
-                endpoint = ocds["RDSInstanceSmall"].Resource?.status?.atProvider?.endpoint
-                host = ocds["RDSInstanceSmall"].Resource?.status?.atProvider?.address
-                username = base64.encode(ocds["RDSInstanceSmall"].Resource?.spec?.forProvider?.username)
-                password = ocds["RDSInstanceSmall"].ConnectionDetails.password
+                endpoint: base64.encode(ocds["rds-instance"].Resource?.status?.atProvider?.endpoint or "")
+                host: base64.encode(ocds["rds-instance"].Resource?.status?.atProvider?.address or "")
+                port: base64.encode(str(ocds["rds-instance"].Resource?.status?.atProvider?.port or 3306))
+                username: base64.encode(ocds["rds-instance"].Resource?.spec?.forProvider?.username or "")
+                password: ocds["rds-instance"].ConnectionDetails?.password or ""
             }
         else:
             data: {}

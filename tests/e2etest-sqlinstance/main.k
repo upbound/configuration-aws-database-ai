@@ -51,11 +51,12 @@ _items = [
                         }
                     }
                 }
-                platformawsv1alpha1.XNetwork{
+                platformawsv1alpha1.Network{
                     apiVersion = "aws.platform.upbound.io/v1alpha1"
-                    kind = "XNetwork"
+                    kind = "Network"
                     metadata = {
                         name = "configuration-aws-database"
+                        namespace = "default"
                     }
                     spec = {
                         parameters = {

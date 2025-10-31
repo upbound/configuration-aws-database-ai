@@ -10,7 +10,7 @@ _items = [
                 platformawsv1alpha1.SQLInstance{
                     metadata = {
                         name = "rds-metrics-database-ai-mysql"
-                        namespace = "default"
+                        namespace = "database-team"
                     }
                     spec = {
                         parameters = {
