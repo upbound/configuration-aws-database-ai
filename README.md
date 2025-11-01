@@ -12,41 +12,50 @@ The core components of a custom API in [Upbound Project](https://docs.upbound.io
 
 In this specific configuration, the API contains:
 
-- **an [AWS Database](/apis/definition.yaml) custom resource type.**
-- **Composition:** Configured in [/apis/composition.yaml](/apis/composition.yaml)
-- **Embedded Function:** The Composition logic is encapsulated within [embedded function](/functions/xsqlinstance/main.k)
+- **an [AWS Database](/apis/definition.yaml) custom resource type (v2 namespaced).**
+- **Composition:** Configured in [/apis/composition-rds-metrics.yaml](/apis/composition-rds-metrics.yaml)
+- **Embedded Function:** The Composition logic is encapsulated within [embedded function](/functions/sqlinstance/main.k)
 
-## Intelligent RDS Scaling Experiment
+## Intelligent RDS Scaling with Crossplane Operations
 
 ### Architecture
-**Pipeline Flow**: `RDS Instance → CloudWatch Metrics → AI Analysis → Scaling Decisions`
+**Pipeline Flow**: `RDS Instance → CloudWatch Metrics → Status → Operations (Scheduled AI Analysis)`
 
 ```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   RDS Instance  │    │ function-rds-    │    │ function-claude │
-│                 │───▶│    metrics       │───▶│                 │
-│ (CloudWatch)    │    │                  │    │ (Claude AI)     │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-                              │                        │
-                              ▼                        ▼
-                    ┌──────────────────┐    ┌─────────────────┐
-                    │ Context:         │    │ Scaling Actions │
-                    │ performanceMetrics│    │ + Audit Trail   │
-                    └──────────────────┘    └─────────────────┘
+┌─────────────────┐    ┌──────────────────┐
+│   RDS Instance  │    │ function-rds-    │
+│                 │───▶│    metrics       │───▶ status.performanceMetrics
+│ (CloudWatch)    │    │                  │
+└─────────────────┘    └──────────────────┘
+                                                      │
+                                                      ▼
+                                            ┌─────────────────────┐
+                                            │ CronOperation       │
+                                            │ (Every 10 min)      │
+                                            │                     │
+                                            │ function-claude     │
+                                            │ (Claude AI)         │
+                                            └─────────────────────┘
+                                                      │
+                                                      ▼
+                                            ┌─────────────────┐
+                                            │ Scaling Actions │
+                                            │ + Audit Trail   │
+                                            └─────────────────┘
 ```
 
 ### Component Integration
 
-**1. function-rds-metrics**
-- Fetches CloudWatch metrics: CPU, memory, IOPS, connections, storage
-- Writes to both `status.performanceMetrics` and `context.performanceMetrics`
-- Provides structured metric data with timestamps and units
+**1. Composition Pipeline**
+- **function-rds-metrics**: Fetches CloudWatch metrics (CPU, memory, IOPS, connections, storage)
+- Writes metrics to `status.performanceMetrics` for Operations consumption
+- **function-auto-ready**: Marks composition ready
 
-**2. function-claude** 
-- Reads metrics from pipeline context via `contextFields: ["performanceMetrics"]`
-- Analyzes complex observed resources (300+ line YAML with full metadata)
-- Makes scaling decisions using Claude Sonnet 4.0 with configurable token limits
-- Returns clean desired spec (no system fields) for server-side apply
+**2. CronOperation (Scheduled Scaling)**
+- **function-claude**: Analyzes metrics from XR status every 10 minutes
+- Makes scaling decisions using Claude Sonnet 4.0
+- Only scales resources with `scale: me` label
+- Rate-limited to prevent scaling thrash
 
 ### Key Technical Challenges Solved
 
@@ -103,19 +112,27 @@ status:
 Deploy an intelligent scaling database:
 ```yaml
 apiVersion: aws.platform.upbound.io/v1alpha1
-kind: XSQLInstance
+kind: SQLInstance
 metadata:
   name: my-intelligent-db
+  namespace: default
+  labels:
+    scale: me  # Enable CronOperation scaling
 spec:
-  compositionSelector:
-    matchLabels:
-      type: intelligent
-      scaling: ai-driven
+  crossplane:
+    compositionSelector:
+      matchLabels:
+        type: rds-metrics
   parameters:
     engine: mariadb
     engineVersion: "10.11"
     storageGB: 20
     region: us-west-2
+    networkRef:
+      id: my-network
+    passwordSecretRef:
+      name: my-db-password
+      key: password
     # ... other parameters
 ```
 
@@ -169,16 +186,19 @@ done
 #### Monitoring Scaling Events
 ```bash
 # Watch Claude's scaling decisions
-kubectl get xsqlinstance your-db-name -o jsonpath='{.status.claudeDecision}' | jq .
+kubectl get sqlinstance your-db-name -n default -o jsonpath='{.status.claudeDecision}' | jq .
 
 # Check current instance class via Kubernetes
-kubectl get instance.rds -l crossplane.io/composite=your-db-name -o jsonpath='{.items[0].spec.forProvider.instanceClass}'
+kubectl get instance.rds.aws.m.upbound.io -n default -l crossplane.io/composite=your-db-name -o jsonpath='{.items[0].spec.forProvider.instanceClass}'
 
 # Monitor instance class changes with watch
-kubectl get instance.rds -l crossplane.io/composite=your-db-name -o custom-columns=NAME:.metadata.name,CLASS:.spec.forProvider.instanceClass,STATUS:.status.conditions[-1].type --watch
+kubectl get instance.rds.aws.m.upbound.io -n default -l crossplane.io/composite=your-db-name -o custom-columns=NAME:.metadata.name,CLASS:.spec.forProvider.instanceClass,STATUS:.status.conditions[-1].type --watch
 
 # Check performance metrics from XR status
-kubectl get xsqlinstance your-db-name -o jsonpath='{.status.performanceMetrics}' | jq .
+kubectl get sqlinstance your-db-name -n default -o jsonpath='{.status.performanceMetrics}' | jq .
+
+# Monitor CronOperation executions
+kubectl get operation -n crossplane-system --watch
 
 # Alternative: Monitor AWS console for instance class changes
 aws rds describe-db-instances --db-instance-identifier your-db-name --query 'DBInstances[0].DBInstanceClass'
@@ -196,25 +216,19 @@ pkill -f "psql.*generate_series"
 
 The configuration can be tested using:
 
-- `up composition render --xrd=apis/definition.yaml apis/composition.yaml examples/mariadb-xr.yaml` to render the MariaDB composition
-- `up composition render --xrd=apis/definition.yaml apis/composition.yaml examples/postgres-xr.yaml` to render the PostgreSQL composition  
-- `up composition render --xrd=apis/definition.yaml apis/composition-intelligent.yaml examples/mariadb-xr-intelligent.yaml` to render the intelligent scaling composition
-- `up test run tests/*` to run composition tests
-- `up test run tests/* --e2e` to run end-to-end tests
+- `up composition render --xrd=apis/definition.yaml apis/composition-rds-metrics.yaml examples/mariadb-xr-rds-metrics.yaml --function-credentials=tests/test-credentials.yaml` to render the composition
+- `up test run tests/test-sqlinstance/` to run composition tests
+- `up test run tests/e2etest-sqlinstance/ --e2e` to run end-to-end tests
 
 ## Crossplane v2.0 Operations
 
 This configuration includes **Crossplane Operations** for automated intelligent scaling using both scheduled and reactive patterns. Operations are automatically deployed with `up project run`.
 
 ### CronOperation: Scheduled Scaling Analysis
-- **Schedule**: Every minute (`*/1 * * * *`) for proactive monitoring
-- **Target**: XSQLInstance resources with `scale: me` label
+- **Schedule**: Every 10 minutes (`*/10 * * * *`) for proactive monitoring
+- **Target**: SQLInstance resources with `scale: me` label
 - **Purpose**: Regular scheduled analysis for predictable workloads
-
-### WatchOperation: Reactive Scaling
-- **Trigger**: Any XSQLInstance resource changes
-- **Purpose**: Immediate response to metric updates or configuration changes
-- **Debouncing**: 5-minute rate limiting to prevent scaling thrash
+- **Rate Limiting**: 5-minute cooldown between scaling actions
 
 ### Operation Features
 - **AI-Powered Decision Making**: Uses `upbound-function-claude` for intelligent scaling decisions
@@ -257,7 +271,8 @@ This configuration includes **Crossplane Operations** for automated intelligent 
 ### Example Resources for Operations Testing
 The configuration includes dedicated examples for operations testing:
 - `examples/network-rds-metrics.yaml`: Network setup for RDS metrics testing
-- `examples/mariadb-xr-rds-metrics.yaml`: XSQLInstance with `scale: me` label for operation targeting
+- `examples/mariadb-xr-rds-metrics.yaml`: MariaDB SQLInstance with `scale: me` label for operation targeting
+- `examples/postgres-xr-rds-metrics.yaml`: PostgreSQL SQLInstance for testing
 
 ## Deployment
 
