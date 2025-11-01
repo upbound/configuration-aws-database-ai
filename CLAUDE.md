@@ -9,12 +9,10 @@ This is an **AI-powered Crossplane configuration for AWS databases** that combin
 ## Architecture
 
 ### Core Components
-- **XRD (CompositeResourceDefinition)**: `apis/definition.yaml` defines the XSQLInstance API with support for PostgreSQL and MariaDB engines
-- **Multiple Composition Modes**:
-  * Standard composition: `apis/composition.yaml` - Basic RDS deployment
-  * Intelligent composition: `apis/composition-intelligent.yaml` - AI-driven scaling with Claude analysis
-  * RDS metrics composition: `apis/composition-rds-metrics.yaml` - CloudWatch metrics integration
-- **Embedded Function**: `functions/xsqlinstance/main.k` contains KCL logic for RDS SubnetGroup and Instance creation
+- **XRD (CompositeResourceDefinition)**: `apis/definition.yaml` defines the SQLInstance API (v2 namespaced) with support for PostgreSQL and MariaDB engines
+- **Composition**:
+  * RDS metrics composition: `apis/composition-rds-metrics.yaml` - CloudWatch metrics integration with AI scaling
+- **Embedded Function**: `functions/sqlinstance/main.k` contains KCL logic for RDS SubnetGroup, Instance, and connection Secret creation
 - **AI Pipeline**: Uses `function-rds-metrics` → `function-claude` for intelligent scaling decisions
 - **Crossplane Operations**: `operations/` directory contains CronOperation for scheduled scaling analysis
 
@@ -29,7 +27,7 @@ The AI-powered scaling system uses a 3-stage pipeline:
 - **Network Integration**: References external network configurations via `networkRef.id`
 - **Intelligent Scaling**: AI-driven scaling decisions with full audit trails
 - **Operations Integration**: Crossplane v2.0 Operations for scheduled and reactive scaling
-- **Connection Secrets**: Automatic exposure of connection details (endpoint, host, username, password)
+- **Connection Secrets**: Manual Secret composition (v2 pattern) exposing connection details (endpoint, host, port, username, password)
 
 ## Development Commands
 
@@ -38,14 +36,12 @@ The AI-powered scaling system uses a 3-stage pipeline:
 # Build and deploy the configuration
 up project build && up project run
 
-# Test composition rendering for different modes
-up composition render --xrd=apis/definition.yaml apis/composition.yaml examples/mariadb-xr.yaml
-up composition render --xrd=apis/definition.yaml apis/composition-intelligent.yaml examples/mariadb-xr-intelligent.yaml
-up composition render --xrd=apis/definition.yaml apis/composition-rds-metrics.yaml examples/mariadb-xr-rds-metrics.yaml
+# Test composition rendering
+up composition render --xrd=apis/definition.yaml apis/composition-rds-metrics.yaml examples/mariadb-xr-rds-metrics.yaml --function-credentials=tests/test-credentials.yaml
 
 # Run composition tests
-up test run tests/test-xsqlinstance/
-up test run tests/e2etest-xsqlinstance/ --e2e
+up test run tests/test-sqlinstance/
+up test run tests/e2etest-sqlinstance/ --e2e
 ```
 
 ### AI Scaling System Setup
@@ -74,27 +70,27 @@ for i in {1..8}; do
 done
 
 # Monitor scaling decisions and instance changes
-kubectl get xsqlinstance your-db-name -o jsonpath='{.status.claudeDecision}' | jq .
-kubectl get instance.rds -l crossplane.io/composite=your-db-name -o jsonpath='{.items[0].spec.forProvider.instanceClass}'
+kubectl get sqlinstance your-db-name -n default -o jsonpath='{.status.claudeDecision}' | jq .
+kubectl get instance.rds.aws.m.upbound.io -n default -l crossplane.io/composite=your-db-name -o jsonpath='{.items[0].spec.forProvider.instanceClass}'
 ```
 
 ## Key Files and Architecture
 
-### Function Implementation (`functions/xsqlinstance/main.k`)
+### Function Implementation (`functions/sqlinstance/main.k`)
 - Creates RDS SubnetGroup with network label selectors matching `networkRef.id`
 - Creates RDS Instance with configurable engine, storage, authentication, and networking
 - Handles both auto-generated passwords and secret references
-- Exports connection details via CompositeConnectionDetails
+- **v2 Pattern**: Manually composes Kubernetes Secret with connection details (endpoint, host, port, username, password)
+- Uses typed `corev1.Secret` model from Kubernetes API dependency
 
-### Intelligent Compositions
-- **Standard**: Basic RDS deployment with auto-ready function
-- **Intelligent**: Adds `function-rds-metrics` and `function-claude` for AI scaling
-- **RDS Metrics**: Metrics collection without AI analysis
+### Composition
+- **RDS Metrics**: Full pipeline with metrics collection, AI analysis via Claude, and auto-ready function
+- Pipeline: `sqlinstance` → `fetch-metrics` (function-rds-metrics) → `crossplane-contrib-function-auto-ready`
 
 ### Test Coverage (`tests/`)
-- **Unit Tests**: `test-xsqlinstance/main.k` validates resource creation for MariaDB and PostgreSQL
-- **E2E Tests**: `e2etest-xsqlinstance/main.k` performs full cloud deployment testing
-- **Test Structure**: Uses `CompositionTest` resources with 60-second timeouts
+- **Composition Tests**: `test-sqlinstance/main.k` validates resource creation for MariaDB and PostgreSQL
+- **E2E Tests**: `e2etest-sqlinstance/main.k` performs full cloud deployment testing
+- **Test Structure**: Uses `CompositionTest` and `E2ETest` resources with function credentials support
 
 ### Operations Integration (`operations/`)
 - **CronOperation**: Scheduled scaling analysis every 10 minutes for resources with `scale: me` label
@@ -105,15 +101,17 @@ kubectl get instance.rds -l crossplane.io/composite=your-db-name -o jsonpath='{.
 ## Dependencies and Integration
 
 ### Required Dependencies (`upbound.yaml`)
-- **provider-aws-rds**: v1 - RDS resource management
-- **configuration-aws-network**: v0.25.0-rc4-yury - Network infrastructure
+- **provider-aws-rds**: v2 (namespaced) - RDS resource management
+- **configuration-aws-network**: Network infrastructure (v2 namespaced)
+- **k8s**: v1.33.0 - Kubernetes API for Secret model
 - **function-auto-ready**: Composition readiness management
 - **function-claude**: v0.2.0 - AI analysis and scaling decisions
 - **function-rds-metrics**: v0.0.6 - CloudWatch metrics collection
 
 ### API Parameters
 - **Required**: `region`, `engine`, `engineVersion`, `storageGB`, `networkRef.id`, `passwordSecretRef`
-- **Optional**: `instanceClass` (default: db.t3.micro), `autoGeneratePassword`, `publiclyAccessible`, `deletionPolicy`
+- **Optional**: `instanceClass` (default: db.t3.micro), `autoGeneratePassword`, `publiclyAccessible`, `managementPolicies`
+- **v2 Changes**: `managementPolicies` replaces `deletionPolicy`, supports: `*`, `Create`, `Observe`, `Update`, `Delete`, `LateInitialize`
 - **AI Status Fields**: `performanceMetrics`, `claudeDecision` with reasoning and timestamps
 
 ## Scaling Decision Process
@@ -143,20 +141,18 @@ status:
 
 ## Production Usage Patterns
 
-### Standard Database Deployment
-Use `apis/composition.yaml` for basic RDS instances without AI scaling.
-
-### AI-Powered Intelligent Scaling
-Use `apis/composition-intelligent.yaml` with Claude API credentials for automated scaling based on real-time analysis.
+### AI-Powered Database Deployment
+Use `apis/composition-rds-metrics.yaml` with Claude API credentials for automated scaling based on real-time CloudWatch metrics analysis.
 
 ### Operations-Based Scaling
 Deploy with `up project run` to enable scheduled scaling analysis via Crossplane Operations.
 
 ### Monitoring and Observability
-- **Scaling Decisions**: Captured in XSQLInstance `status.claudeDecision`
+- **Scaling Decisions**: Captured in SQLInstance `status.claudeDecision`
 - **Performance Metrics**: Available in `status.performanceMetrics`
 - **Audit Trail**: Full reasoning preserved for compliance
 - **Cost Tracking**: ~$0.06-0.12 per scaling decision with Claude API
+- **Connection Secrets**: Available at `{sqlinstance-name}-connection` in same namespace
 
 ## Critical Implementation Notes
 
@@ -170,7 +166,9 @@ Deploy with `up project run` to enable scheduled scaling analysis via Crossplane
 - Requires `configuration-aws-network` for VPC, subnets, and security groups
 - Uses label selectors with `networks.aws.platform.upbound.io/network-id` matching
 
-### Secret Management
+### Secret Management (v2 Pattern)
 - Supports both referenced secrets and auto-generated passwords
-- Connection secrets written to `upbound-system` namespace by default
-- Claude API key must be stored as `claude` secret in `crossplane-system` namespace
+- **v2 Connection Secrets**: Function manually composes `{name}-connection` Secret in SQLInstance namespace
+- Managed resources write raw credentials to `{name}-rds-conn` Secret
+- Claude API key must be stored as `claude` secret in `crossplane-system` namespace (for AI scaling)
+- AWS credentials required in `crossplane-system/aws-creds` for function-rds-metrics
