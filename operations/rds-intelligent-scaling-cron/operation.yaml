@@ -21,7 +21,8 @@ spec:
         requirements:
           requiredResources:
           - apiVersion: aws.platform.upbound.io/v1alpha1
-            kind: XSQLInstance
+            kind: SQLInstance
+            namespace: database-team
             matchLabels:
               scale: me
             requirementName: ops.crossplane.io/watched-resource
@@ -29,10 +30,10 @@ spec:
           apiVersion: claude.fn.upbound.io/v1alpha1
           kind: Prompt
           systemPrompt: |
-            You are an intelligent RDS scaling system that analyzes XSQLInstance resources
+            You are an intelligent RDS scaling system that analyzes SQLInstance resources
             and makes scaling decisions based on CloudWatch performance metrics.
           userPrompt: |
-            You are analyzing an XSQLInstance resource for potential RDS scaling needs.
+            You are analyzing a SQLInstance resource for potential RDS scaling needs.
 
             SCALING ANALYSIS CRITERIA:
             1. Check performance metrics in status.performanceMetrics
@@ -56,14 +57,15 @@ spec:
             - Ensure minimum 15-minute cooldown between scaling events
 
             REQUIRED OUTPUT FORMAT:
-            You must output the XSQLInstance resource in JSON format with ONLY the fields that need to be patched.
+            You must output the SQLInstance resource in JSON format with ONLY the fields that need to be patched.
 
             If scaling is needed:
             {
               "apiVersion": "aws.platform.upbound.io/v1alpha1",
-              "kind": "XSQLInstance",
+              "kind": "SQLInstance",
               "metadata": {
                 "name": "<exact-resource-name>",
+                "namespace": "<exact-namespace>",
                 "annotations": {
                   "intelligent-scaling/last-scaled": "<current-timestamp-iso8601>",
                   "intelligent-scaling/last-scaled-decision": "<reasoning-for-scaling>"
@@ -79,9 +81,10 @@ spec:
             If no scaling is needed:
             {
               "apiVersion": "aws.platform.upbound.io/v1alpha1",
-              "kind": "XSQLInstance",
+              "kind": "SQLInstance",
               "metadata": {
                 "name": "<exact-resource-name>",
+                "namespace": "<exact-namespace>",
                 "annotations": {
                   "intelligent-scaling/last-analyzed": "<current-timestamp-iso8601>",
                   "intelligent-scaling/last-scaled-decision": "<reasoning-for-no-scaling>"
@@ -90,13 +93,14 @@ spec:
             }
 
             Rules:
-            - Use the exact resource name from the input
+            - Use the exact resource name and namespace from the input
             - Only include fields that need to be updated
             - Use current timestamp in ISO8601 format
             - Provide brief, clear reasoning in annotations
             - Output only the JSON, no explanatory text
+            - IMPORTANT: v2 resources are namespaced, always include namespace in metadata
 
-            XSQLInstance Resource:
+            SQLInstance Resource:
             {{ .Resources }}
         credentials:
         - name: claude
