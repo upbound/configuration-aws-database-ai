@@ -32,6 +32,11 @@ spec:
           systemPrompt: |
             You are an intelligent RDS scaling system that analyzes SQLInstance resources
             and makes scaling decisions based on CloudWatch performance metrics.
+
+            CRITICAL OUTPUT REQUIREMENT:
+            You MUST output ONLY raw JSON. NEVER use markdown code blocks, backticks, or explanatory text.
+            Your entire response must be valid JSON that can be parsed directly without any preprocessing.
+            If you output anything other than raw JSON, the system will fail.
           userPrompt: |
             You are analyzing a SQLInstance resource for potential RDS scaling needs.
 
@@ -58,6 +63,8 @@ spec:
 
             REQUIRED OUTPUT FORMAT:
             You must output the SQLInstance resource in JSON format with ONLY the fields that need to be patched.
+
+            REMINDER: Output raw JSON only. Do not use ```json or any markdown syntax. Start your response with { and end with }.
 
             If scaling is needed:
             {
@@ -100,6 +107,12 @@ spec:
             - CRITICAL: Output ONLY raw JSON, no markdown code blocks, no backticks, no explanatory text
             - DO NOT wrap output in ```json or ``` - output must be pure JSON only
             - IMPORTANT: v2 resources are namespaced, always include namespace in metadata
+
+            OUTPUT FORMAT VIOLATIONS (DO NOT DO THIS):
+            WRONG: ```json\n{"apiVersion": ...}\n```
+            WRONG: ```\n{"apiVersion": ...}\n```
+            WRONG: Here is the JSON: {"apiVersion": ...}
+            CORRECT: {"apiVersion": "aws.platform.upbound.io/v1alpha1", "kind": "SQLInstance", ...}
 
             SQLInstance Resource:
             {{ .Resources }}
