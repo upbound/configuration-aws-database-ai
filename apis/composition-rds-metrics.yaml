@@ -35,7 +35,7 @@ spec:
       - name: aws-creds
         source: Secret
         secretRef:
-          namespace: crossplane-system
+          namespace: database-team
           name: aws-creds
   - step: crossplane-contrib-function-auto-ready
     functionRef:

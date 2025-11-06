@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    kubernetes.io/metadata.name: database-team
+  name: database-team
+spec:
+  finalizers:
+  - kubernetes

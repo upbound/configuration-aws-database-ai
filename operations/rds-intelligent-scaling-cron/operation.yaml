@@ -97,7 +97,8 @@ spec:
             - Only include fields that need to be updated
             - Use current timestamp in ISO8601 format
             - Provide brief, clear reasoning in annotations
-            - Output only the JSON, no explanatory text
+            - CRITICAL: Output ONLY raw JSON, no markdown code blocks, no backticks, no explanatory text
+            - DO NOT wrap output in ```json or ``` - output must be pure JSON only
             - IMPORTANT: v2 resources are namespaced, always include namespace in metadata
 
             SQLInstance Resource:

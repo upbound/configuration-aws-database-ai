@@ -79,6 +79,9 @@ _items = [
             labels: {
                 "crossplane.io/composite": oxr.metadata.name
             }
+            annotations: {
+                "krm.kcl.dev/ready": "True"
+            }
         }
         type: "connection.crossplane.io/v1alpha1"
         if "rds-instance" in ocds:
