@@ -43,11 +43,11 @@ spec:
             3. Check if analysis was done recently (intelligent-scaling annotations)
 
             RATE LIMITING:
-            - Skip analysis if "intelligent-scaling/last-analyzed" annotation exists and is < 5 minutes old
+            - Skip analysis if "intelligent-scaling/last-analyzed" annotation exists and is < 1 minute old
             - Only proceed if no recent analysis or if metrics show significant changes
 
-            SCALING TRIGGERS (conservative for cost control):
-            - SCALE UP: CPU > 85%, Memory < 15%, Connections > 85%
+            SCALING TRIGGERS (demo-optimized for visibility):
+            - SCALE UP: CPU > 60%, Memory < 15%, Connections > 85%
             - SCALE DOWN: CPU < 20% AND Memory > 60% AND Connections < 30% for sustained period
 
             INSTANCE CLASS PROGRESSION (bidirectional):
@@ -56,7 +56,7 @@ spec:
             DOWNSCALING SAFETY:
             - Only scale down if ALL conditions met for sustained period
             - Check last-scaled annotation to prevent frequent changes
-            - Ensure minimum 15-minute cooldown between scaling events
+            - Ensure minimum 5-minute cooldown between scaling events
 
             OUTPUT FORMAT:
             Provide your response as a JSON resource patch. The JSON should contain ONLY the fields that need to be updated.
