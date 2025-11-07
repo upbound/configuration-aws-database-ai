@@ -101,6 +101,7 @@ spec:
             - Provide brief, clear reasoning in annotations
             - IMPORTANT: v2 resources are namespaced, always include namespace in metadata
             - Output the JSON on a single line without extra formatting
+            - no ```json in the output
 
             SQLInstance Resource:
             {{ .Resources }}
@@ -111,4 +112,4 @@ spec:
             namespace: crossplane-system
             name: claude
       retryLimit: 3
-  schedule: '*/2 * * * *'  # Run every 2 minutes for demo
+  schedule: '* * * * *'  # Run every 2 minutes for demo
