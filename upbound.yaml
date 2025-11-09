@@ -15,7 +15,7 @@ spec:
   - apiVersion: pkg.crossplane.io/v1
     kind: Configuration
     package: xpkg.upbound.io/upbound/configuration-aws-network
-    version: v0.26.0-rc1-yury
+    version: v2.0.0
   - apiVersion: pkg.crossplane.io/v1
     kind: Function
     package: xpkg.upbound.io/crossplane-contrib/function-auto-ready
