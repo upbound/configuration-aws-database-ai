@@ -112,4 +112,4 @@ spec:
             namespace: crossplane-system
             name: claude
       retryLimit: 3
-  schedule: '* * * * *'  # Run every 2 minutes for demo
+  schedule: '* * * * *'  # Run every minute for demo
