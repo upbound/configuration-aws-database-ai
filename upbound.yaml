@@ -3,15 +3,19 @@ kind: Project
 metadata:
   name: configuration-aws-database-ai
 spec:
+  apiDependencies:
+  - k8s:
+      version: v1.33.0
+    type: k8s
   dependsOn:
   - apiVersion: pkg.crossplane.io/v1
     kind: Provider
     package: xpkg.upbound.io/upbound/provider-aws-rds
-    version: v1
+    version: v2
   - apiVersion: pkg.crossplane.io/v1
     kind: Configuration
     package: xpkg.upbound.io/upbound/configuration-aws-network
-    version: v0.25.0-rc4-yury
+    version: v2.0.0
   - apiVersion: pkg.crossplane.io/v1
     kind: Function
     package: xpkg.upbound.io/crossplane-contrib/function-auto-ready
@@ -19,11 +23,11 @@ spec:
   - apiVersion: pkg.crossplane.io/v1
     kind: Function
     package: xpkg.upbound.io/upbound/function-claude
-    version: v0.2.0
+    version: v0.3.0
   - apiVersion: pkg.crossplane.io/v1beta1
     kind: Function
     package: xpkg.upbound.io/upbound/function-rds-metrics
-    version: v0.0.6
+    version: v0.0.7
   description: This repository provides a foundational configuration to build and
     operate an AWS database, including handling its dependencies and configurations.
     The setup ensures a streamlined and repeatable deployment in a cloud environment.

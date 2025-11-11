@@ -1,15 +1,19 @@
-import models.io.upbound.aws.rds.v1beta1 as rdsv1beta1
+import models.io.upbound.awsm.rds.v1beta1 as rdsv1beta1
 import models.io.upbound.platform.aws.v1alpha1 as platformawsv1alpha1
+import models.io.k8s.api.core.v1 as corev1
 
 import base64
 
-oxr = platformawsv1alpha1.XSQLInstance{**option("params").oxr} # observed composite resource
+oxr = platformawsv1alpha1.SQLInstance{**option("params").oxr} # observed composite resource
 ocds = option("params").ocds # observed composite resource
 oxrParams = oxr.spec.parameters
 
 defaultSpec = {
-    providerConfigRef.name = oxr.spec.parameters.providerConfigName or "default"
-    deletionPolicy = oxr.spec.parameters.deletionPolicy
+    providerConfigRef = {
+        kind = "ProviderConfig"
+        name = oxr.spec.parameters.providerConfigName or "default"
+    }
+    managementPolicies = oxr.spec.parameters.managementPolicies or ["*"]
     forProvider.region = oxr.spec.parameters.region
 }
 
@@ -36,7 +40,7 @@ _items = [
         }
     }
     rdsv1beta1.Instance{
-        metadata: _metadata("rds-instance-small")
+        metadata: _metadata("rds-instance")
         spec: defaultSpec | {
             forProvider: {
                 dbName = "upbound"
@@ -54,28 +58,39 @@ _items = [
                     "networks.aws.platform.upbound.io/network-id" = oxrParams.networkRef.id
                 }
                 autoGeneratePassword = oxrParams.autoGeneratePassword
+                # V2: passwordSecretRef no longer has namespace field (inferred from resource namespace)
                 passwordSecretRef = {
                     name = oxrParams.passwordSecretRef.name
-                    namespace = oxrParams.passwordSecretRef.namespace
                     key = oxrParams.passwordSecretRef.key
-
                 }
             }
+            # V2: Managed resources can still write connection secrets
             writeConnectionSecretToRef = {
-                name = "{}-sql".format(oxr.metadata.uid)
-                namespace = oxr.spec.writeConnectionSecretToRef.namespace
+                name = "{}-rds-conn".format(oxr.metadata.name)
             }
         }
     }
-    {
-        apiVersion: "meta.krm.kcl.dev/v1alpha1"
-        kind: "CompositeConnectionDetails"
-        if "RDSInstanceSmall" in ocds:
+    # V2: XRs no longer have built-in connection secret support
+    # Manually compose a Kubernetes Secret with connection details
+    corev1.Secret{
+        metadata: _metadata("connection-secret") | {
+            name: "{}-connection".format(oxr.metadata.name)
+            namespace: oxr.metadata.namespace
+            labels: {
+                "crossplane.io/composite": oxr.metadata.name
+            }
+            annotations: {
+                "krm.kcl.dev/ready": "True"
+            }
+        }
+        type: "connection.crossplane.io/v1alpha1"
+        if "rds-instance" in ocds:
             data: {
-                endpoint = ocds["RDSInstanceSmall"].Resource?.status?.atProvider?.endpoint
-                host = ocds["RDSInstanceSmall"].Resource?.status?.atProvider?.address
-                username = base64.encode(ocds["RDSInstanceSmall"].Resource?.spec?.forProvider?.username)
-                password = ocds["RDSInstanceSmall"].ConnectionDetails.password
+                endpoint: base64.encode(ocds["rds-instance"].Resource?.status?.atProvider?.endpoint or "")
+                host: base64.encode(ocds["rds-instance"].Resource?.status?.atProvider?.address or "")
+                port: base64.encode(str(ocds["rds-instance"].Resource?.status?.atProvider?.port or 3306))
+                username: base64.encode(ocds["rds-instance"].Resource?.spec?.forProvider?.username or "")
+                password: ocds["rds-instance"].ConnectionDetails?.password or ""
             }
         else:
             data: {}

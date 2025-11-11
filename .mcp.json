@@ -1,0 +1,23 @@
+{
+    "mcpServers": {
+        "kubectl-ai": {
+            "command": "kubectl-ai",
+            "args": [
+                "--mcp-server"
+            ]
+        },
+        "upbound-marketplace": {
+            "command": "docker",
+            "args": [
+                "run",
+                "--name",
+                "mcp-marketplace",
+                "--rm",
+                "-i",
+                "-v",
+                "/Users/xnull/.up/:/mcp/.up:ro",
+                "xpkg.upbound.io/upbound/marketplace-mcp-server:v0.1.0"
+            ]
+        }
+    }
+}
