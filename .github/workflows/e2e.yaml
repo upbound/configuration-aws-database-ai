@@ -26,26 +26,8 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Install and login with up
-        if: env.UP_API_TOKEN != '' && env.UP_ORG != ''
-        uses: upbound/action-up@53fe6395637d884c80d2bbc8c2d75d0ece776ced # v1
-        with:
-          api-token: ${{ env.UP_API_TOKEN }}
-          organization: ${{ env.UP_ORG }}
-
-      # doesn't work with plain token when pushing otherwise
-      - name: Login to xpkg with robot
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3
-        with:
-          registry: xpkg.upbound.io
-          username: ${{ env.UP_ROBOT_ID }}
-          password: ${{ env.UP_API_TOKEN }}
-
       - name: Build project
         run: up project build
 
-      - name: Switch up context
-        run: up ctx ${{ env.UP_ORG }}/upbound-gcp-us-central-1/${{ env.UP_GROUP }}
-
       - name: Run e2e tests
-        run: up test run tests/* --e2e
+        run: up test run tests/* --e2e --local
