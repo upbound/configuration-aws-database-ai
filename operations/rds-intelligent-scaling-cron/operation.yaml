@@ -29,6 +29,7 @@ spec:
         input:
           apiVersion: claude.fn.upbound.io/v1alpha1
           kind: Prompt
+          modelName: claude-haiku-4-5@20251001 # haiku brings serious cost savings
           systemPrompt: |
             You are an intelligent RDS scaling system that analyzes SQLInstance resources
             and makes scaling decisions based on CloudWatch performance metrics.
