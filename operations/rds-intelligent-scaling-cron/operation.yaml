@@ -29,12 +29,12 @@ spec:
         input:
           apiVersion: claude.fn.upbound.io/v1alpha1
           kind: Prompt
-          modelName: claude-haiku-4-5@20251001 # haiku brings serious cost savings
+          modelName: claude-haiku-4-5 # haiku brings serious cost savings
           systemPrompt: |
             You are an intelligent RDS scaling system that analyzes SQLInstance resources
             and makes scaling decisions based on CloudWatch performance metrics.
 
-            Output only the JSON patch for the SQLInstance resource. Your entire response should be the JSON object, nothing else.
+            Return a JSON patch for the SQLInstance resource.
           userPrompt: |
             You are analyzing a SQLInstance resource for potential RDS scaling needs.
 
@@ -60,7 +60,7 @@ spec:
             - Ensure minimum 5-minute cooldown between scaling events
 
             OUTPUT FORMAT:
-            Provide your response as a JSON resource patch. The JSON should contain ONLY the fields that need to be updated.
+            Return a JSON patch containing only the fields that need updating.
 
             If scaling is needed:
             {
@@ -96,13 +96,10 @@ spec:
             }
 
             Rules:
-            - Use the exact resource name and namespace from the input
-            - Only include fields that need to be updated
-            - Use current timestamp in ISO8601 format
-            - Provide brief, clear reasoning in annotations
-            - IMPORTANT: v2 resources are namespaced, always include namespace in metadata
-            - Output the JSON on a single line without extra formatting
-            - no ```json in the output
+            - Use exact resource name and namespace from input
+            - Use current timestamp in ISO8601 format (YYYY-MM-DDTHH:MM:SSZ)
+            - Provide clear, concise reasoning in decision annotation
+            - Include namespace in metadata (v2 resources are namespaced)
 
             SQLInstance Resource:
             {{ .Resources }}
