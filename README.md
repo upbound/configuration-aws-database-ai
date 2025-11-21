@@ -52,10 +52,11 @@ In this specific configuration, the API contains:
 - **function-auto-ready**: Marks composition ready
 
 **2. CronOperation (Scheduled Scaling)**
-- **function-claude**: Analyzes metrics from XR status every 10 minutes
-- Makes scaling decisions using Claude Sonnet 4.0
+- **function-claude**: Analyzes metrics from XR status every minute (demo frequency)
+- Makes scaling decisions using **Claude Haiku 4.5** (85%+ cost reduction vs Sonnet)
 - Only scales resources with `scale: me` label
 - Rate-limited to prevent scaling thrash
+- **Requires**: function-claude v0.4.0+ for reliable markdown handling
 
 ### Key Technical Challenges Solved
 
@@ -101,10 +102,24 @@ status:
     timestamp: "2025-07-29T22:05:18Z"
 ```
 
+### Cost Expectations (Haiku Model)
+
+**AI inference costs at 1-minute schedule (demo)**:
+- ~$9.52/day per database
+- ~$285/month per database
+- ~$3,470/year per database
+
+**Production schedules** (cost scales with frequency):
+- 5-minute: ~$695/year per database
+- 10-minute: ~$347/year per database
+- 30-minute: ~$116/year per database
+
+*Note: Costs include AI analysis only, not AWS infrastructure*
+
 ### Production Results
 - ✅ **End-to-end pipeline**: All components synced and ready
-- ✅ **Real-time decisions**: ~2-5 second analysis latency  
-- ✅ **Cost efficiency**: ~$0.06-0.12 per scaling decision
+- ✅ **Real-time decisions**: ~2-5 second analysis latency
+- ✅ **Cost-efficient AI**: ~$0.02-0.04 per scaling decision
 - ✅ **Audit compliance**: Full reasoning captured in XR status
 - ✅ **Safety**: Only scales up, prevents accidental downsizing
 
@@ -148,69 +163,68 @@ spec:
 
 **Current Status**: **Experimental** - Successfully proven concept with real infrastructure, ready for production validation and monitoring.
 
-## Load Testing and Benchmarking
+## Performance Testing (perftest)
 
-### Database Stress Testing for AI Scaling Validation
+### How to Run Performance Tests
 
-To validate the intelligent scaling system, you can stress test the RDS instance to trigger high CPU utilization and observe AI-driven scaling decisions:
+This repository includes automated scripts to validate the intelligent scaling system and trigger AI-driven scaling decisions.
 
-#### MySQL/MariaDB Stress Test
+#### Automated Load Test with Monitoring
+
+Use `perf-scale-demo.sh` for a complete end-to-end scaling demonstration:
+
 ```bash
-# Trigger high CPU load with multiple concurrent MD5 hash computations
-for i in {1..8}; do
-    mysql \
-      --host=your-rds-endpoint.region.rds.amazonaws.com \
-      --user=masteruser \
-      --password=your-password \
-      --default-auth=mysql_native_password \
-      --execute="SELECT BENCHMARK(1000000000, MD5('trigger_scaling_$i'));" &
-done
+# Run with defaults (rds-metrics-database-ai-mysql in database-team namespace)
+./perf-scale-demo.sh
+
+# Custom SQLInstance name
+./perf-scale-demo.sh my-database
+
+# Custom SQLInstance and namespace
+./perf-scale-demo.sh my-database default
 ```
 
-#### PostgreSQL Stress Test
+**What it does**:
+- Automatically extracts connection details from the SQLInstance's connection secret
+- Launches 30 concurrent MySQL processes with intensive CPU load (BENCHMARK operations)
+- Monitors CPU utilization, instance class, and scaling decisions every 20 seconds
+- Automatically stops when scaling is detected or after 5 minutes
+- Cleans up all background processes on completion
+
+**Expected timeline**:
+1. 30-60 seconds: CPU reaches 50%+ utilization
+2. 1-2 minutes: CloudWatch metrics update
+3. Next CronOperation run: Claude analyzes metrics and triggers scaling
+4. 5-10 minutes: Instance class upgrade completes
+
+#### Continuous Monitoring
+
+Use `simple-demo-scaling-monitor.sh` to watch scaling decisions in real-time:
+
 ```bash
-# Alternative for PostgreSQL instances
-for i in {1..8}; do
-    psql "postgresql://masteruser:password@your-rds-endpoint.region.rds.amazonaws.com/upbound" \
-      -c "SELECT md5(generate_series(1,10000000)::text);" &
-done
+# Monitor with defaults (45-second refresh interval)
+./simple-demo-scaling-monitor.sh
+
+# Custom SQLInstance name
+./simple-demo-scaling-monitor.sh my-database
+
+# Custom refresh interval (30 seconds)
+./simple-demo-scaling-monitor.sh my-database default 30
 ```
+
+**What it displays**:
+- CPU utilization, free memory, and database connections
+- Current instance class
+- All `intelligent-scaling/*` annotations (last-scaled-decision, last-scaled-at, cooldown-until)
+- Refreshes continuously until stopped (Ctrl+C)
 
 #### Expected Behavior
-1. **CPU Spike**: Database CPU should reach 80%+ utilization within 1-2 minutes
-2. **Metrics Collection**: function-rds-metrics captures high CPU in context
-3. **AI Analysis**: Claude detects threshold breach and recommends scaling
-4. **Infrastructure Change**: Instance class upgraded (e.g., db.t3.micro → db.t3.small)
-5. **Performance Recovery**: CPU utilization drops after scaling completes
-
-#### Monitoring Scaling Events
-```bash
-# Watch Claude's scaling decisions
-kubectl get sqlinstance your-db-name -n default -o jsonpath='{.status.claudeDecision}' | jq .
-
-# Check current instance class via Kubernetes
-kubectl get instance.rds.aws.m.upbound.io -n default -l crossplane.io/composite=your-db-name -o jsonpath='{.items[0].spec.forProvider.instanceClass}'
-
-# Monitor instance class changes with watch
-kubectl get instance.rds.aws.m.upbound.io -n default -l crossplane.io/composite=your-db-name -o custom-columns=NAME:.metadata.name,CLASS:.spec.forProvider.instanceClass,STATUS:.status.conditions[-1].type --watch
-
-# Check performance metrics from XR status
-kubectl get sqlinstance your-db-name -n default -o jsonpath='{.status.performanceMetrics}' | jq .
-
-# Monitor CronOperation executions
-kubectl get operation -n crossplane-system --watch
-
-# Alternative: Monitor AWS console for instance class changes
-aws rds describe-db-instances --db-instance-identifier your-db-name --query 'DBInstances[0].DBInstanceClass'
-```
-
-#### Cleanup
-```bash
-# Stop all background processes
-pkill -f "mysql.*BENCHMARK"
-# or for PostgreSQL
-pkill -f "psql.*generate_series"
-```
+1. **CPU Spike**: Database CPU reaches 60%+ utilization (threshold for demo scaling)
+2. **Metrics Collection**: function-rds-metrics captures CloudWatch data in XR status
+3. **AI Analysis**: Claude Haiku evaluates metrics against thresholds
+4. **Scaling Decision**: Instance class upgraded (e.g., db.t3.micro → db.t3.small → db.t3.medium)
+5. **Cooldown Period**: 5-minute rate limit prevents scaling thrash
+6. **Performance Recovery**: CPU utilization drops after scaling completes
 
 ## Testing
 
@@ -225,10 +239,11 @@ The configuration can be tested using:
 This configuration includes **Crossplane Operations** for automated intelligent scaling using both scheduled and reactive patterns. Operations are automatically deployed with `up project run`.
 
 ### CronOperation: Scheduled Scaling Analysis
-- **Schedule**: Every 10 minutes (`*/10 * * * *`) for proactive monitoring
+- **Schedule**: Every minute (`* * * * *`) for demo - adjust for production
 - **Target**: SQLInstance resources with `scale: me` label
 - **Purpose**: Regular scheduled analysis for predictable workloads
 - **Rate Limiting**: 5-minute cooldown between scaling actions
+- **Recommended production**: 5-10 minute intervals for cost optimization
 
 ### Operation Features
 - **AI-Powered Decision Making**: Uses `upbound-function-claude` for intelligent scaling decisions
