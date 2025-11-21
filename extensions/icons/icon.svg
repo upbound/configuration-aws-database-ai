@@ -1,0 +1,51 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="upboundGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6B4FBB;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4A90E2;stop-opacity:1" />
+    </linearGradient>
+
+    <linearGradient id="dbGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#5E4DB2;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4A3F9B;stop-opacity:1" />
+    </linearGradient>
+
+    <radialGradient id="aiGlow">
+      <stop offset="0%" style="stop-color:#FFD93D;stop-opacity:0.6" />
+      <stop offset="100%" style="stop-color:#FFD93D;stop-opacity:0" />
+    </radialGradient>
+
+    <linearGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFD93D;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#FFA500;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <rect width="128" height="128" rx="16" fill="#0F1419"/>
+
+  <circle cx="64" cy="64" r="50" fill="url(#aiGlow)" opacity="0.4"/>
+
+  <g transform="translate(35, 25)">
+    <ellipse cx="24" cy="8" rx="20" ry="7" fill="url(#dbGradient)" stroke="#6B4FBB" stroke-width="1.5"/>
+    <rect x="4" y="8" width="40" height="35" fill="url(#dbGradient)"/>
+    <ellipse cx="24" cy="43" rx="20" ry="7" fill="url(#dbGradient)" stroke="#6B4FBB" stroke-width="1.5"/>
+    <ellipse cx="24" cy="18" rx="20" ry="7" fill="none" stroke="#4A90E2" stroke-width="1" opacity="0.4"/>
+    <ellipse cx="24" cy="30" rx="20" ry="7" fill="none" stroke="#4A90E2" stroke-width="1" opacity="0.4"/>
+  </g>
+
+  <text x="64" y="95" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="url(#goldGradient)" text-anchor="middle" letter-spacing="2">AI</text>
+
+  <g transform="translate(75, 35)">
+    <circle cx="0" cy="0" r="4" fill="#FFD93D"/>
+    <circle cx="12" cy="-8" r="2.5" fill="#FFD93D" opacity="0.8"/>
+    <circle cx="12" cy="8" r="2.5" fill="#FFD93D" opacity="0.8"/>
+    <circle cx="24" cy="0" r="3.5" fill="#FFD93D" opacity="0.9"/>
+    <line x1="4" y1="0" x2="9.5" y2="-8" stroke="#FFD93D" stroke-width="1.5" opacity="0.6"/>
+    <line x1="4" y1="0" x2="9.5" y2="8" stroke="#FFD93D" stroke-width="1.5" opacity="0.6"/>
+    <line x1="14.5" y1="-8" x2="20.5" y2="0" stroke="#FFD93D" stroke-width="1.5" opacity="0.6"/>
+    <line x1="14.5" y1="8" x2="20.5" y2="0" stroke="#FFD93D" stroke-width="1.5" opacity="0.6"/>
+  </g>
+
+  <circle cx="45" cy="25" r="2" fill="#FFD93D" opacity="0.8"/>
+  <circle cx="95" cy="55" r="1.5" fill="#FFD93D" opacity="0.8"/>
+</svg>
