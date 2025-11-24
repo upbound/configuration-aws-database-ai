@@ -35,7 +35,7 @@ spec:
   license: Apache-2.0
   maintainer: Upbound <support@upbound.io>
   readme: |
-    This configuration provides **AI-powered intelligent scaling** for AWS RDS databases using Crossplane. It combines traditional infrastructure-as-code with automated scaling decisions powered by Claude AI.
+    This configuration provides **AI-powered intelligent scaling** for AWS RDS databases using Crossplane. It combines deterministic Crossplane control plane reconciliation with automated scaling decisions powered by Claude AI.
 
     **Key Features**:
     - **Intelligent Scaling**: AI analyzes CloudWatch metrics (CPU, memory, IOPS, connections) to make scaling decisions
