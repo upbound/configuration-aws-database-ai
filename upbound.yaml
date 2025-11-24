@@ -28,14 +28,24 @@ spec:
     kind: Function
     package: xpkg.upbound.io/upbound/function-rds-metrics
     version: v0.0.7
-  description: This repository provides a foundational configuration to build and
-    operate an AWS database, including handling its dependencies and configurations.
-    The setup ensures a streamlined and repeatable deployment in a cloud environment.
+  description: AI-powered Crossplane configuration for AWS RDS with intelligent scaling.
+    Automatically analyzes CloudWatch metrics and makes data-driven scaling decisions
+    using Claude AI. Includes Crossplane Operations for scheduled scaling with full
+    audit trails and rate limiting.
   license: Apache-2.0
   maintainer: Upbound <support@upbound.io>
   readme: |
-    This repository offers a specialized configuration for deploying and managing an AWS database on Kubernetes using Crossplane. This setup provides the necessary infrastructure to deploy RDS instances managed with Crossplane in Kubernetes. This approach ensures a flexible, streamlined deployment workflow.
+    This configuration provides **AI-powered intelligent scaling** for AWS RDS databases using Crossplane. It combines traditional infrastructure-as-code with automated scaling decisions powered by Claude AI.
 
-    For more details and customization options, you can explore [the GitHub repository](https://github.com/upbound/configuration-aws-database).
+    **Key Features**:
+    - **Intelligent Scaling**: AI analyzes CloudWatch metrics (CPU, memory, IOPS, connections) to make scaling decisions
+    - **Crossplane Operations**: Scheduled scaling via CronOperation with configurable intervals and cooldown periods
+    - **Full Audit Trail**: All scaling decisions captured in resource annotations with complete reasoning
+    - **Multi-Engine Support**: PostgreSQL and MariaDB with configurable versions and instance classes
+    - **Cost-Effective**: Highly efficient AI model reduces operational costs while maintaining performance
+
+    **Pipeline**: `RDS Instance → CloudWatch Metrics → Metrics Collection → AI Analysis → Scaling Actions`
+
+    For detailed setup, performance testing scripts, and customization options, visit [the GitHub repository](https://github.com/upbound/configuration-aws-database-ai).
   repository: xpkg.upbound.io/upbound/configuration-aws-database-ai
   source: github.com/upbound/configuration-aws-database-ai
