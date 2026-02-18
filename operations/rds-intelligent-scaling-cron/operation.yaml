@@ -44,7 +44,7 @@ spec:
             3. Check if analysis was done recently (intelligent-scaling annotations)
 
             RATE LIMITING:
-            - Skip analysis if "intelligent-scaling/last-analyzed" annotation exists and is < 1 minute old
+            - Skip analysis if "intelligent-scaling/last-analyzed" annotation exists and is < 30 seconds old
             - Only proceed if no recent analysis or if metrics show significant changes
 
             SCALING TRIGGERS (demo-optimized for visibility):
