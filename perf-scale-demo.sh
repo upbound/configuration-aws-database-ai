@@ -33,21 +33,18 @@ echo "✅ Connected to: ${DB_ENDPOINT}:${DB_PORT}"
 echo ""
 echo "🚀 Starting DEMO load test (optimized for speed)..."
 
-# Maximum intensity load - 20 processes with high benchmark values
-for i in {1..20}; do
-    mysql --host=$DB_ENDPOINT --user=$DB_USER --password=$DB_PASS \
-          --default-auth=mysql_native_password \
-          --execute="SELECT BENCHMARK(3000000000, MD5('demo_intensive_$i'));" &
-done
-
-# Additional CPU-intensive operations
-for i in {1..10}; do
-    mysql --host=$DB_ENDPOINT --user=$DB_USER --password=$DB_PASS \
-          --execute="
-            SELECT BENCHMARK(1000000000, SHA2(CONCAT('demo_', RAND()), 256));
-            SELECT BENCHMARK(1000000000, MD5(CONCAT(CONNECTION_ID(), '_$i')));
-          " &
-done
+# Use mysqlslap for sustained CPU saturation:
+# - 50 concurrent threads (vs 30 forked processes) with persistent connections
+# - Smaller BENCHMARK count (50M) with RAND() re-evaluated per iteration → more queries/sec
+# - Runs in background; cleanup via pkill mysqlslap
+mysqlslap \
+  --host=$DB_ENDPOINT \
+  --user=$DB_USER \
+  --password=$DB_PASS \
+  --concurrency=50 \
+  --number-of-queries=999999 \
+  --query="SELECT BENCHMARK(50000000, MD5(RAND()));" \
+  --create-schema=mysql &
 
 echo ""
 echo "⏱️  Load test running... Expected timeline:"
@@ -87,8 +84,7 @@ done
 
 echo ""
 echo "🛑 Stopping load test..."
-pkill -f "mysql.*BENCHMARK"
-pkill -f "mysql.*SHA2"
+pkill -f mysqlslap
 
 echo ""
 echo "✅ Demo complete!"
