@@ -1,0 +1,24 @@
+# The unified, OpenAI/Anthropic-compatible endpoint on the control plane
+# cluster. Installs Traefik and creates a Gateway that routes to model replicas
+# on the remote inference cluster.
+#
+# Exactly one per control plane, and it must be named "default".
+#
+# NOTE: the address this publishes is reachable from inside the control plane
+# cluster. Modelplane serves it over plain HTTP with no authentication and no
+# TLS (_GATEWAY_SCHEME is a constant; InferenceGateway has no tls field), so it
+# must not be exposed to the internet. That is why the scaling WatchOperation
+# has to run on this same cluster - see operations/.
+apiVersion: modelplane.ai/v1alpha1
+kind: InferenceGateway
+metadata:
+  name: default
+spec:
+  backend: Traefik
+  traefik:
+    version: "40.2.0"
+    # EKS supports LoadBalancer Services natively, so no loadBalancer block.
+    # On kind, add:
+    #   loadBalancer: MetalLB
+    #   metallb:
+    #     addressPool: "172.18.255.200-172.18.255.250"

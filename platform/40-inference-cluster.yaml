@@ -1,0 +1,37 @@
+# The EKS cluster Modelplane provisions and owns to serve the scaling model.
+#
+# Placed in the same region as the RDS instances it makes decisions about
+# (examples/ use us-west-2), so metrics and decisions stay in one region.
+#
+# Cost note, because it is easy to under-count: Modelplane's EKS provisioning
+# also creates a system node group of its own - m6i.xlarge, 1-2 nodes - to host
+# the inference stack's control components. Budget that alongside the GPU node
+# and the EKS control plane. See COST.md.
+#
+# Modelplane assumes exclusive ownership of an inference cluster. Tear it down
+# with foreground cascading deletion so the inference stack uninstalls before
+# the API server goes away:
+#   kubectl delete inferencecluster eks-us-west --cascade=foreground
+apiVersion: modelplane.ai/v1alpha1
+kind: InferenceCluster
+metadata:
+  name: eks-us-west
+  labels:
+    modelplane.ai/region: us-west
+spec:
+  cluster:
+    source: EKS
+    eks:
+      region: us-west-2
+  nodePools:
+  - name: gpu-l4
+    className: l4-1x-g6
+    nodeCount: 1
+    minNodeCount: 1
+    # Raise maxNodeCount to let the fleet grow past one GPU. Each added L4 is a
+    # step in the cost curve, not a smooth increase - see COST.md.
+    maxNodeCount: 1
+    zones:
+    # Verify g6 capacity and your EC2 quota in this zone before applying;
+    # g6 is not available in every us-west-2 AZ.
+    - us-west-2b

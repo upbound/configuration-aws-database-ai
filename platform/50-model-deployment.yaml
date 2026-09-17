@@ -1,0 +1,81 @@
+# Qwen3-8B served by vLLM on its OpenAI-compatible routes.
+#
+# function-openai calls /v1/chat/completions, and Modelplane's route preserves
+# the path below the service prefix, so the ModelService address plus /v1 is all
+# the function needs. That endpoint lives in the credential Secret, so pointing
+# these decisions at any other OpenAI-compatible provider is a Secret edit with
+# no manifest change.
+#
+# Flag notes, because most of these are load-bearing rather than tuning:
+#
+#   --served-model-name=qwen         the name the client sends as "model". Must
+#                                    match modelName in the WatchOperation.
+#   --reasoning-parser=qwen3 with
+#   --default-chat-template-kwargs   turns thinking OFF. Qwen3 thinks by
+#                                    default, which would bury the JSON scaling
+#                                    decision inside a <think> block and make it
+#                                    unparseable. This is not optional here.
+#   --max-model-len=8192             the scaling prompt is ~3.5K in / ~500 out.
+#                                    A smaller window than the model's native
+#                                    40960 leaves far more of the L4's 23GB for
+#                                    KV cache, which is what caps concurrency -
+#                                    and concurrency is what the fleet cost
+#                                    model depends on.
+#   --gpu-memory-utilization=0.92    headroom, not correctness.
+#
+# Deliberately NOT set: --enable-auto-tool-choice / --tool-call-parser. Those
+# exist to support tool calling, and there is none here. With no MCP tools
+# configured langchaingo builds an empty function list, and the request field is
+# json:"tools,omitempty", so "tools" is omitted from the wire entirely - a plain
+# chat completion. The agent also passes the reply through verbatim in that case
+# rather than demanding a formatted "Final Answer:", which is what makes a small
+# model workable.
+#
+# Concurrency lever to settle by measurement, not by argument: swapping
+# --model for Qwen/Qwen3-8B-AWQ cuts weights from ~16GB to ~6GB and frees the
+# difference for KV cache, raising decisions/sec per L4 substantially. Left on
+# FP16 here because that is the shape Modelplane validates; see COST.md for the
+# measurement that should decide it.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ml-team
+---
+apiVersion: modelplane.ai/v1alpha1
+kind: ModelDeployment
+metadata:
+  name: qwen3-8b
+  namespace: ml-team
+spec:
+  replicas: 1
+  template:
+    spec:
+      engines:
+      - name: qwen3-8b
+        members:
+        - role: Standalone
+          nodeSelector:
+            devices:
+            - name: gpu
+              count: 1
+              selectors:
+              # Any L4 satisfies >= 20Gi. Matched against the capacity declared
+              # in the InferenceClass, not against pod resource requests.
+              - cel: |
+                  device.capacity["gpu.nvidia.com"].memory.compareTo(quantity("20Gi")) >= 0
+          template:
+            spec:
+              containers:
+              # Must be named "engine", exactly one, and the XRD rejects
+              # ports/probes/resources/volumes - Modelplane wires the :8000
+              # port and /health probe itself.
+              - name: engine
+                image: vllm/vllm-openai:v0.23.0
+                args:
+                - "--model=Qwen/Qwen3-8B"
+                - "--served-model-name=qwen"
+                - "--max-model-len=8192"
+                - "--gpu-memory-utilization=0.92"
+                - "--reasoning-parser=qwen3"
+                - "--default-chat-template-kwargs={\"enable_thinking\": false}"

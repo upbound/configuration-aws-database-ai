@@ -1,0 +1,30 @@
+# A hardware class describing nodes that have no accelerator at all.
+#
+# The devices block is the contract a ModelDeployment's nodeSelector matches
+# against, and Modelplane requires at least one CLAIMABLE (claim: DRA) device
+# per engine. On CPU-only nodes that device comes from the vendored
+# dra-example-driver, which publishes fake gpu.example.com devices - see
+# 00-dra-example-driver.yaml for why this is necessary rather than optional.
+#
+# No provisioning block: this describes hardware that already exists on a
+# bring-your-own cluster. Modelplane's cloud provisioning is GPU-only
+# (provisioning.eks forces the NVIDIA AMI and a nvidia.com/gpu taint), so a
+# CPU fleet has to arrive via source: Existing.
+#
+# The declared capacity must match what the driver actually publishes, because
+# a ModelDeployment selector is evaluated against THIS block. The example
+# driver publishes 80Gi per device.
+apiVersion: modelplane.ai/v1alpha1
+kind: InferenceClass
+metadata:
+  name: cpu-synthetic
+spec:
+  description: "CPU-only nodes, claimable device supplied by dra-example-driver"
+  devices:
+  - name: gpu
+    claim: DRA
+    driver: gpu.example.com
+    deviceClassName: gpu.example.com
+    count: 1
+    capacity:
+      memory: {value: "80Gi"}

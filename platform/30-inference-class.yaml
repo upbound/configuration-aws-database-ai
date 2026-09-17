@@ -1,0 +1,35 @@
+# The hardware class the scaling model runs on: one NVIDIA L4 on an EKS
+# g6.xlarge. The L4 is the cheapest datacenter inference GPU AWS offers and is
+# the smallest shape Modelplane ships a validated recipe for.
+#
+# Sizing note: an 8B model is a fraction of this card. The binding constraint at
+# fleet scale is KV cache, not weights - see the model deployment.
+apiVersion: modelplane.ai/v1alpha1
+kind: InferenceClass
+metadata:
+  name: l4-1x-g6
+spec:
+  description: "EKS g6.xlarge, 1x NVIDIA L4"
+  provisioning:
+    provider: EKS
+    eks:
+      instanceType: g6.xlarge
+      diskSizeGb: 50
+      # Informational for EKS - the instance family determines the GPU. The
+      # scheduler matches on spec.devices below, not on this block.
+      accelerator:
+        type: nvidia-l4
+        count: 1
+  devices:
+  - name: gpu
+    claim: DRA
+    driver: gpu.nvidia.com
+    deviceClassName: gpu.nvidia.com
+    count: 1
+    attributes:
+      architecture: {string: Ada Lovelace}
+    capacity:
+      # The L4's real reported VRAM, which is what the NVIDIA DRA driver
+      # publishes - not its nominal 24GB. A selector asking for >= 24Gi would
+      # never bind.
+      memory: {value: "23034Mi"}

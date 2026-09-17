@@ -1,0 +1,45 @@
+# The Modelplane Crossplane Configuration. Installing it adds the Modelplane
+# APIs (InferenceGateway, InferenceClass, InferenceCluster, ModelDeployment,
+# ModelCache, ModelService, ModelEndpoint) and the composition functions that
+# reconcile them.
+#
+# Pinned to v0.4.0, the current release.
+#
+# INSTALL THIS ON A FRESH CONTROL PLANE. v0.4.0 cannot be reached by upgrading
+# an existing v0.3.1 install in place. All fourteen Modelplane XRDs add a
+# category to spec.names in v0.4.0 - "infrastructure" on the cluster kinds,
+# "platform" on class/cluster/gateway, "models" on the deployment/service/
+# endpoint/replica/cache kinds - and spec.names is immutable on a
+# CompositeResourceDefinition. The new revision goes Active and stays
+# Healthy=False:
+#
+#   cannot establish control of object: CompositeResourceDefinition
+#   "aksclusters.infrastructure.modelplane.ai" is invalid:
+#   spec.names: Invalid value: "object": Value is immutable
+#
+# This does not clear on retry. Completing the upgrade means deleting all
+# fourteen XRDs, which deletes every composite they own. See
+# cpu-fleet/README.md.
+#
+# The failed revision is inert, not destructive: throughout the stall a running
+# fleet kept serving - both ModelDeployments stayed Ready and the canary
+# endpoint answered HTTP 200.
+#
+# Do not read Healthy=True on an Inactive revision as the upgrade recovering.
+# An Inactive revision reports healthy because it is not establishing control
+# of anything; it says nothing about whether the Active one succeeded.
+#
+# DOWNGRADING DOES NOT WORK EITHER. Modelplane's embedded composition functions
+# are pinned by digest, so an older Configuration cannot reinstall over a newer
+# one:
+#
+#   existing package modelplane_compose-inference-cluster@sha256:953b005...
+#   is incompatible with constraint sha256:a880d9fc...
+#
+# Once a control plane has seen v0.4.0, the way out is forward or fresh.
+apiVersion: pkg.crossplane.io/v1
+kind: Configuration
+metadata:
+  name: modelplane
+spec:
+  package: xpkg.upbound.io/modelplane/modelplane:v0.4.0

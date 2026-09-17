@@ -1,0 +1,46 @@
+# One endpoint, two models, weighted 90/10.
+#
+# This is the capability that justifies a platform rather than a bare vLLM
+# Deployment. The scaling WatchOperation is pointed at a single URL and knows
+# nothing about how many models sit behind it or in what proportion. Shifting
+# traffic is an edit to the weights below - no manifest change anywhere in the
+# configuration, no Secret change, no restart.
+#
+# Modelplane composes one ModelEndpoint per ModelReplica, labelled
+# modelplane.ai/deployment: <deployment-name>, so selecting on that label
+# reaches every replica of a deployment. Weights are relative and spread as
+# evenly as possible across the endpoints an entry matches.
+#
+# The demo:
+#
+#   1. Apply as-is. 90% of scaling decisions go to the incumbent, 10% to the
+#      challenger.
+#   2. Measure:  tests/scale/agreement.sh
+#      The challenger over-scales - it scales databases that need nothing,
+#      which is the failure that costs real money.
+#   3. Roll back by setting the challenger weight to 1 and the incumbent to
+#      1000000, or delete the entry. Takes effect on the next decision.
+#   4. Had it measured well, promote it the same way, in the other direction.
+#
+# The honest version of the story: you cannot know which model fits your task
+# without measuring it against real decisions. This is what lets that
+# experiment run in production on a slice you choose, rather than as a
+# cutover you hope goes well.
+#
+# Read the address for the gpt Secret with:
+#   kubectl get ms rds-scaler -n ml-team -o jsonpath='{.status.address}'
+apiVersion: modelplane.ai/v1alpha1
+kind: ModelService
+metadata:
+  name: rds-scaler
+  namespace: ml-team
+spec:
+  endpoints:
+  - weight: 90
+    selector:
+      matchLabels:
+        modelplane.ai/deployment: scaler-incumbent
+  - weight: 10
+    selector:
+      matchLabels:
+        modelplane.ai/deployment: scaler-challenger

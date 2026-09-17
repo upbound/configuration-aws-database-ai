@@ -1,0 +1,49 @@
+# Registers a CPU cluster Modelplane serves models onto.
+#
+# source: Existing because Modelplane's cloud provisioning paths are all GPU
+# (see 10-inference-class.yaml). Modelplane still installs and manages the
+# inference stack on this cluster - cert-manager, Envoy Gateway, Gateway API
+# CRDs, kube-prometheus-stack, Node Feature Discovery, LeaderWorkerSet and the
+# NVIDIA DRA driver (which finds nothing and no-ops). Budget several GiB.
+#
+# The kubeconfig Secret must exist in the modelplane-system namespace, and the
+# address inside it must be reachable from the control plane's provider pods.
+# Create it with setup.sh, which uses `kind get kubeconfig --internal` for
+# exactly that reason.
+#
+# THIS MUST POINT AT A SECOND CLUSTER, not the control plane itself. Tested
+# pointing it at the control plane and it fails permanently: the control-plane
+# InferenceGateway (Traefik) composes the Gateway API CRDs, the ServingStack
+# installs them again via Envoy Gateway's chart, and the second install loses a
+# server-side-apply conflict on
+# .metadata.annotations.gateway.networking.k8s.io/channel. The gateway-helm
+# release never goes Ready and this resource sits at
+# "Ready=False  Unready resources: serving-stack" forever.
+#
+# Modelplane's "assumes exclusive ownership of each inference cluster" is load
+# bearing, not advisory. See platform/cpu-fleet/README.md for the full error.
+#
+# Nodes must carry modelplane.ai/pool=<nodePools[].name>. Modelplane labels the
+# pools it provisions itself; on a BYO cluster you label them. Without the label
+# worker pods stay Pending with no obvious cause. setup.sh does this.
+#
+# Tear down with foreground cascading deletion so the inference stack uninstalls
+# before anything else goes away:
+#   kubectl delete inferencecluster cpu-local --cascade=foreground
+apiVersion: modelplane.ai/v1alpha1
+kind: InferenceCluster
+metadata:
+  name: cpu-local
+  labels:
+    modelplane.ai/region: local
+spec:
+  cluster:
+    source: Existing
+    existing:
+      secretRef:
+        name: cpu-local-kubeconfig
+        key: kubeconfig
+  nodePools:
+  - name: cpu-synthetic
+    className: cpu-synthetic
+    nodeCount: 1

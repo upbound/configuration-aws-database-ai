@@ -1,0 +1,62 @@
+# The challenger: Qwen2.5-0.5B, deliberately a BAD model for this task.
+#
+# It measured 0% correct and over-scaled 38% of the time
+# (tests/e2e-local/results/qwen2.5-0.5b-q4.txt). That is the point. A canary is
+# only worth demonstrating if it can actually catch something, and a model that
+# scales databases which need nothing is exactly the failure that costs money.
+#
+# Take 10% of decisions with it (50-model-service-canary.yaml), measure with
+# tests/e2e-local/eval-model.sh or tests/scale/agreement.sh, and the numbers
+# should tell you to roll back before it has touched 90% of the fleet.
+#
+# Swap this for whatever model you are actually evaluating. The shape is the
+# demo, not the specific model.
+apiVersion: modelplane.ai/v1alpha1
+kind: ModelDeployment
+metadata:
+  name: scaler-challenger
+  namespace: ml-team
+spec:
+  replicas: 1
+  template:
+    spec:
+      engines:
+      - name: qwen05
+        members:
+        - role: Standalone
+          nodeSelector:
+            devices:
+            - name: gpu
+              count: 1
+              selectors:
+              # Matched against the InferenceClass devices block, not against
+              # pod resource requests. The example driver publishes 80Gi.
+              - cel: |
+                  device.capacity["gpu.example.com"].memory.compareTo(quantity("20Gi")) >= 0
+          template:
+            spec:
+              containers:
+              - name: engine
+                image: ghcr.io/ggml-org/llama.cpp:server
+                args:
+                - "-hf"
+                - "Qwen/Qwen2.5-0.5B-Instruct-GGUF:q4_k_m"
+                - "--host"
+                - "0.0.0.0"
+                - "--port"
+                - "8000"
+                - "--ctx-size"
+                - "8192"
+                - "--jinja"
+                - "--temp"
+                - "0"
+                - "--alias"
+                - "qwen"
+                # Cap generation at the ENGINE. function-openai sends no
+                # max_tokens, so without this the model generates until it
+                # exhausts --ctx-size and llama.cpp reports
+                #   decode() failed: Context size has been exceeded
+                # while the Operation hangs in PipelineRunning. Measured: a
+                # scaling decision never returned until this was set.
+                - "--n-predict"
+                - "256"

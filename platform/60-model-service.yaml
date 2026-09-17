@@ -1,0 +1,24 @@
+# Exposes the deployment as one address. The route matches the
+# /<namespace>/<service>/ prefix and preserves the path below it, so
+# .../v1/chat/completions reaches vLLM's OpenAI surface, which is the route
+# function-openai calls.
+#
+# Read the address and put it in the `gpt` Secret as OPENAI_BASE_URL, with a
+# /v1 suffix. Nothing in operations/ needs editing.
+#
+#   kubectl get ms qwen3-8b -n ml-team -o jsonpath='{.status.address}'
+#
+# The client posts to {OPENAI_BASE_URL}/chat/completions, so a status.address of
+#   http://10.0.1.5/ml-team/qwen3-8b
+# becomes an OPENAI_BASE_URL of
+#   http://10.0.1.5/ml-team/qwen3-8b/v1
+apiVersion: modelplane.ai/v1alpha1
+kind: ModelService
+metadata:
+  name: qwen3-8b
+  namespace: ml-team
+spec:
+  endpoints:
+  - selector:
+      matchLabels:
+        modelplane.ai/deployment: qwen3-8b
