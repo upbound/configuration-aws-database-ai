@@ -13,14 +13,38 @@ This is an **AI-powered Crossplane configuration for AWS databases** that combin
 - **Composition**:
   * RDS metrics composition: `apis/composition-rds-metrics.yaml` - CloudWatch metrics integration with AI scaling
 - **Embedded Function**: `functions/sqlinstance/main.k` contains KCL logic for RDS SubnetGroup, Instance, and connection Secret creation
-- **AI Pipeline**: Uses `function-rds-metrics` → `function-claude` for intelligent scaling decisions
-- **Crossplane Operations**: `operations/` directory contains CronOperation for scheduled scaling analysis
+- **AI Pipeline**: the composition only fetches metrics. Inference happens in a
+  `WatchOperation`, not in the composition pipeline, so a slow or unavailable
+  model cannot block reconciliation.
+- **Crossplane Operations**: `operations/` contains a `WatchOperation` that reacts
+  to XR changes. It replaced a `CronOperation`, whose schedule existed only to
+  rate-limit hosted-model API spend.
+- **Self-hosted model**: `platform/` deploys a Modelplane inference cluster
+  serving Qwen3-8B on one NVIDIA L4. `function-openai` reaches it via
+  `OPENAI_BASE_URL` in the `gpt` Secret, calling vLLM's OpenAI-compatible
+  `/v1/chat/completions`.
+- **CPU fleet**: `platform/cpu-fleet/` is the same thing with no GPU - Modelplane
+  deploys, schedules and canaries two CPU models behind one weighted
+  `ModelService`, using a fake-DRA driver to satisfy the scheduler's claimable
+  device requirement. This is the Modelplane showcase; see its README.
 
 ### Intelligent Scaling Pipeline
-The AI-powered scaling system uses a 3-stage pipeline:
-1. **Metrics Collection**: `function-rds-metrics` fetches CloudWatch data (CPU, memory, IOPS, connections)
-2. **AI Analysis**: `function-claude` evaluates metrics against scaling thresholds using Claude Sonnet 4.0
-3. **Resource Updates**: Dynamically scales instance class or storage based on AI recommendations
+Event-driven, in two places rather than one pipeline:
+
+**Composition** (on every reconcile)
+1. `function-rds-metrics` writes CloudWatch data to `status.performanceMetrics`
+2. The embedded KCL function surfaces `status.observedInstanceClass` and
+   `status.observedInstanceStatus` from the composed RDS Instance
+
+**WatchOperation** (on any XR change)
+3. `function-openai`, pointed at the self-hosted model by the `gpt` Secret,
+   either patches `spec.parameters.instanceClass` or writes nothing at all
+
+Writing nothing on a no-op is load-bearing, not an optimisation: the generated
+Operation's name hashes the watched resource's `resourceVersion`, so any write
+re-triggers the analysis. A no-op that stamped a timestamp annotation would loop
+forever - which is why the old prompt's annotation-age logic had to go, along
+with asking a model that has no clock to compute elapsed time.
 
 ### Key Features
 - **Multi-Engine Support**: PostgreSQL and MariaDB with configurable versions
@@ -46,16 +70,19 @@ up test run tests/e2etest-sqlinstance/ --e2e
 
 ### AI Scaling System Setup
 ```bash
-# Deploy Claude API credentials (required for intelligent scaling)
-kubectl create secret generic claude \
-  --from-literal=ANTHROPIC_API_KEY=your-api-key \
-  -n crossplane-system
+# The gpt Secret carries the endpoint and model as well as the token.
+# OPENAI_API_KEY is required but unchecked by vLLM.
+kubectl -n crossplane-system create secret generic gpt \
+  --from-literal=OPENAI_API_KEY=not-used-by-vllm \
+  --from-literal=OPENAI_BASE_URL="$(kubectl get ms qwen3-8b -n ml-team \
+     -o jsonpath='{.status.address}')/v1" \
+  --from-literal=OPENAI_MODEL=qwen
 
-# Deploy with operations (includes CronOperation for scheduled scaling)
+# Deploy with operations (includes the scaling WatchOperation)
 up project run  # Automatically includes operations/ directory
 
 # Monitor scaling operations
-kubectl get cronoperation,operation -n crossplane-system --watch
+kubectl get watchoperation,operation --watch   # cluster-scoped, no -n
 ```
 
 ### Load Testing for Scaling Validation
@@ -70,7 +97,7 @@ for i in {1..8}; do
 done
 
 # Monitor scaling decisions and instance changes
-kubectl get sqlinstance your-db-name -n default -o jsonpath='{.status.claudeDecision}' | jq .
+kubectl get sqlinstance your-db-name -n default -o jsonpath='{.metadata.annotations}' | jq .
 kubectl get instance.rds.aws.m.upbound.io -n default -l crossplane.io/composite=your-db-name -o jsonpath='{.items[0].spec.forProvider.instanceClass}'
 ```
 
@@ -93,26 +120,62 @@ kubectl get instance.rds.aws.m.upbound.io -n default -l crossplane.io/composite=
 - **Test Structure**: Uses `CompositionTest` and `E2ETest` resources with function credentials support
 
 ### Operations Integration (`operations/`)
-- **CronOperation**: Scheduled scaling analysis every 10 minutes for resources with `scale: me` label
-- **Rate Limiting**: 5-minute cooldown to prevent scaling thrash
-- **Conservative Scaling**: CPU >85%, Memory <15%, Connections >85% thresholds
+- **WatchOperation**: reacts to any change on a `SQLInstance` labelled `scale: me`, in any namespace
+- **Convergence**: `status.observedInstanceClass` vs `spec.parameters.instanceClass` - no wall-clock cooldown
+- **Concurrency**: `Forbid`, not the `Allow` default
+- **Thresholds**: CPU >80%, free memory <15%, connections >80%
+- **One resource per Operation**: `function-openai` fails hard on more than one watched resource ("too many resources sent to the function. expected 1"), and Crossplane injects the selector itself - never declare `requirements.requiredResources`
 - **Instance Progression**: `db.t3.micro → db.t3.small → db.t3.medium → db.t3.large`
 
 ## Dependencies and Integration
 
 ### Required Dependencies (`upbound.yaml`)
+
+**`up project build` rewrites `upbound.yaml` and strips comments from it.** Do
+not put explanatory notes there - they will not survive a build. Version values
+are preserved.
+
+**Scaling inference uses `function-openai` (v0.3.9), not `function-claude`.** It
+reads `OPENAI_BASE_URL`, `OPENAI_MODEL` and `OPENAI_API_KEY` from a Secret named
+`gpt`. `OPENAI_BASE_URL` defaults to api.openai.com and `OPENAI_MODEL` to
+`gpt-4`, so a missing key silently sends decisions to OpenAI - check the Secret
+first when something looks wrong.
+
+**Published releases up to and including v0.3.9 are unusable against a
+self-hosted engine.** Five bugs, all fixed on the `fix-selfhosted-issues` branch
+of `function-openai` and verified end to end (see
+`tests/e2e-local/results/function-openai-fixed-comparison.md` and
+`tests/e2e-local/results/cpu-fleet-e2e-run-v040.md`):
+
+1. prompts built with `html/template`, so the interpolated resource arrives
+   HTML-escaped - unparseable and ~4x larger (measured 5,167 vs 930 tokens)
+2. no `max_tokens` sent, so the engine generates to context exhaustion and the
+   Operation hangs indefinitely
+3. markdown fences stripped only on the composition path, and only ` ```yaml `
+4. unparseable output reported as `FunctionSuccess=True`, indistinguishable
+   from a deliberate no-op
+5. the model's output applied to whatever resource the model named, so a reply
+   that copied a few-shot example patched a resource nobody asked about - the
+   safety bug, detailed below
+
+With published v0.3.9 a database at 37% CPU was scaled up; with the fixed build
+the same input correctly does nothing.
+
+`function-claude` was the original choice and is not used. For the record: no
+published release of it carries a `baseURL` field, including v0.4.9.
+
 - **provider-aws-rds**: v2 (namespaced) - RDS resource management
 - **configuration-aws-network**: Network infrastructure (v2 namespaced)
 - **k8s**: v1.33.0 - Kubernetes API for Secret model
 - **function-auto-ready**: Composition readiness management
-- **function-claude**: v0.2.0 - AI analysis and scaling decisions
-- **function-rds-metrics**: v0.0.6 - CloudWatch metrics collection
+- **function-openai**: `xpkg.upbound.io/solutions/function-openai:v0.3.9-selfhosted-fixes-2` - scaling decisions against any OpenAI-compatible endpoint. Published upstream releases are unusable here; see above.
+- **function-rds-metrics**: v0.0.7 - CloudWatch metrics collection
 
 ### API Parameters
 - **Required**: `region`, `engine`, `engineVersion`, `storageGB`, `networkRef.id`, `passwordSecretRef`
 - **Optional**: `instanceClass` (default: db.t3.micro), `autoGeneratePassword`, `publiclyAccessible`, `managementPolicies`
 - **v2 Changes**: `managementPolicies` replaces `deletionPolicy`, supports: `*`, `Create`, `Observe`, `Update`, `Delete`, `LateInitialize`
-- **AI Status Fields**: `performanceMetrics`, `claudeDecision` with reasoning and timestamps
+- **AI Status Fields**: `performanceMetrics`, plus `observedInstanceClass` and `observedInstanceStatus` (the convergence gate)
 
 ## Scaling Decision Process
 
@@ -126,40 +189,133 @@ performanceMetrics:
 ```
 
 ### AI Analysis Thresholds
-- **CPU >80%**: Scale up instance class
-- **Memory <20% free**: Memory-optimized instance
-- **IOPS >80%**: Increase storage or instance class
-- **Connections >80%**: Larger instance class
 
-### Output: Structured Decision
-```yaml
-status:
-  claudeDecision:
-    reasoning: "CPU utilization at 1.98% is well below 80% threshold..."
-    timestamp: "2025-07-29T22:05:18Z"
+Scale UP one step when any of: CPUUtilization > 80, DatabaseConnections > 80% of
+the class limit, FreeableMemory under 15% of class memory.
+
+Scale DOWN one step only when ALL of: CPUUtilization < 20, DatabaseConnections
+< 30%, FreeableMemory above 60%.
+
+Both directions require the convergence gates first: `observedInstanceClass`
+equals `spec.parameters.instanceClass` and `observedInstanceStatus` is
+"available". There is no IOPS rule and no memory-optimised class switch - the
+progression is linear through db.t3.micro/small/medium/large.
+
+### Output: always one line of JSON
+
+**No action does NOT mean empty output.** The model restates the class the
+resource already has, with no annotations. An identical server-side apply does
+not bump `resourceVersion`, so it is still a genuine no-write and the watch
+settles - verified over 4 minutes in
+`tests/e2e-local/results/loop-stability-v2-contract.txt`.
+
+This replaced an "output nothing at all" contract, which fought how a language
+model works and measured 0/9 on the no-action cases at every model size tested.
+See `tests/e2e-local/results/README.md`.
+
+A scaling decision produces one line of JSON, which Crossplane
+server-side-applies:
+
+```json
+{"apiVersion":"aws.platform.upbound.io/v1alpha1","kind":"SQLInstance","metadata":{"name":"my-db","namespace":"database-team","annotations":{"intelligent-scaling/reasoning":"CPU 94% sustained above 80%"}},"spec":{"parameters":{"instanceClass":"db.t3.small"}}}
 ```
+
+The model cannot write `status` - it is a subresource an Operation patch does not
+reach. That is why the previously declared `status.claudeDecision` was never
+populated by anything and has been removed.
 
 ## Production Usage Patterns
 
 ### AI-Powered Database Deployment
-Use `apis/composition-rds-metrics.yaml` with Claude API credentials for automated scaling based on real-time CloudWatch metrics analysis.
+Use `apis/composition-rds-metrics.yaml` for metrics collection. It needs AWS
+credentials only - there is no model credential in the composition, because
+inference happens in the WatchOperation.
 
 ### Operations-Based Scaling
-Deploy with `up project run` to enable scheduled scaling analysis via Crossplane Operations.
+Deploy with `up project run`, which picks up `operations/` automatically. Scaling
+is event-driven, not scheduled: the WatchOperation fires on any change to a
+`SQLInstance` labelled `scale: me`. There is no cron schedule to tune.
 
 ### Monitoring and Observability
-- **Scaling Decisions**: Captured in SQLInstance `status.claudeDecision`
+- **Scaling Decisions**: the `intelligent-scaling/reasoning` annotation on real scaling events, plus retained Operation objects
 - **Performance Metrics**: Available in `status.performanceMetrics`
 - **Audit Trail**: Full reasoning preserved for compliance
-- **Cost Tracking**: ~$0.06-0.12 per scaling decision with Claude API
+- **Cost Tracking**: ~$0.00475 per decision on claude-haiku-4-5 (~3,250 in /
+  ~300 out, one call). The old $0.06-0.12 figure was Sonnet-era and wrong by an
+  order of magnitude. Self-hosted has no per-decision cost; see `COST.md` for
+  the crossover, and note that decision quality - not throughput - is the
+  binding constraint.
 - **Connection Secrets**: Available at `{sqlinstance-name}-connection` in same namespace
 
 ## Critical Implementation Notes
 
+### The model can patch the wrong resource (guarded since v0.3.9-selfhosted-fixes-2)
+
+Measured on the live rig, not theoretical. Under concurrent load the model
+sometimes copies a **few-shot example's `metadata.name` and `namespace`** out of
+the prompt instead of the watched resource's, and Crossplane server-side-applies
+it as returned:
+
+```
+{"kind":"SQLInstance","metadata":{"name":"db-d","namespace":"team-y",...},
+ "spec":{"parameters":{"instanceClass":"db.t3.small"}}}
+cannot apply desired resource: namespaces "team-y" not found
+```
+
+Five of eight Operations did this at 8-way concurrency; zero of two did it
+sequentially. It failed safe only because `team-y` does not exist on the test
+rig - **on a fleet where that name exists, it would resize another team's
+database.** Nothing currently validates that the returned identity matches the
+watched resource.
+
+Root cause of the concurrency trigger is engine capacity, not the prompt: the
+CPU engines run `n_slots = 4, n_ctx_slot = 8192, kv_unified = true` - one
+8,192-token KV cache shared across four concurrent requests - while a real
+watched `SQLInstance` renders to ~2,710 tokens. Four concurrent requests need
+~10,840 and the engine returns `500 Context size has been exceeded`.
+
+**Fixed in `xpkg.upbound.io/solutions/function-openai:v0.3.9-selfhosted-fixes-2`**
+(branch `fix-selfhosted-issues`). The operation path now compares the returned
+resource's group, kind, namespace and name against the watched resource and
+refuses to apply a mismatch: `FunctionSuccess=False`, reason
+`ResourceIdentityMismatch`, a warning event naming both identities, and no
+desired resources. The API *version* is excluded from the comparison, since two
+versions of one kind are the same object.
+
+It refuses rather than rewriting the identity to match: a decision reasoned
+about the wrong resource cannot be trusted to carry the right instance class
+either.
+
+Verified on the live rig, both directions, using the mock engine's
+`foreign-resource` mode (a real model cannot be made to misbehave on demand):
+
+- foreign reply -> refused, and **no** `cannot apply desired resource` event,
+  where previously Crossplane attempted the apply
+- legitimate reply for the watched resource at CPU 95 -> still applied,
+  `db.t3.micro` -> `db.t3.small`
+
+Raising `--ctx-size` or lowering `--parallel` on the engine reduces how often
+the model misbehaves; only this guard bounds the damage when it does. Both are
+still worth doing - see `tests/e2e-local/results/cpu-fleet-e2e-run-v040.md`.
+
+**Known gap:** a refused patch still leaves the Operation reporting
+`Succeeded=True`, because the function returns a condition rather than a fatal
+result. The damage is prevented but a fleet operator watching
+`kubectl get operation` sees green. The signal is the warning event. Making it
+fatal would surface it and trigger the retry budget; that is a deliberate open
+choice, not an oversight.
+
+Related, and also unfixed: the model **misses scale-ups near the threshold** -
+CPU 85 was left at `db.t3.micro`, consistent with the eval's measured 21% miss
+rate. Pair the model with a deterministic threshold check.
+
+
 ### AI Function Configuration
-- **Token Limits**: Uses 8192 max tokens for handling complex YAML resources
-- **Context Flow**: Metrics passed via `contextFields: ["performanceMetrics"]`
-- **Safety**: Only scales up to prevent accidental downsizing
+- **No tools on the wire**: with no MCP tools configured, langchaingo omits `tools` (it is `json:"tools,omitempty"`), so the engine needs no tool-calling flags. The OpenAI-functions agent then returns the model's content verbatim instead of demanding a formatted `Final Answer:`, which is what makes a small model viable and keeps cost per decision one call.
+- **Context Flow**: the whole watched resource is templated into the prompt via `{{ .Resources }}`. function-openai's input schema is only `systemPrompt` and `userPrompt` - model and endpoint come from the Secret. There is no `contextFields`. `maxTokens` exists only in the `fix-selfhosted-issues` build (capped at 1024); published v0.3.9 sends no `max_tokens` at all, which hangs a CPU engine - see `platform/cpu-fleet/README.md`.
+- **Bidirectional**: scales down as well as up, but only when all three
+  down-thresholds are clear. Thrash is prevented by the convergence gate
+  (observed vs desired class), not by refusing to scale down.
 - **Schema Validation**: Returns clean desired spec without system fields
 
 ### Network Integration
@@ -170,5 +326,8 @@ Deploy with `up project run` to enable scheduled scaling analysis via Crossplane
 - Supports both referenced secrets and auto-generated passwords
 - **v2 Connection Secrets**: Function manually composes `{name}-connection` Secret in SQLInstance namespace
 - Managed resources write raw credentials to `{name}-rds-conn` Secret
-- Claude API key must be stored as `claude` secret in `crossplane-system` namespace (for AI scaling)
+- The `gpt` Secret in `crossplane-system` carries the model endpoint as well as
+  the token: `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`. The name `gpt`
+  and the key `OPENAI_API_KEY` are compiled into function-openai. There is no
+  `claude` Secret any more.
 - AWS credentials required in `crossplane-system/aws-creds` for function-rds-metrics

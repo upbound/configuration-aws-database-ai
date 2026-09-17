@@ -1,5 +1,10 @@
 extends: default
 
+# Vendored third-party manifests keep upstream formatting so they can be
+# re-synced with a plain copy. Do not restyle them.
+ignore: |
+  platform/cpu-fleet/00-dra-example-driver.yaml
+
 rules:
   line-length: disable
   document-start: disable

@@ -11,5 +11,5 @@ jobs:
         with:
           reporter: github-pr-review
           filter_mode: nofilter
-          yamllint_flags: 'apis/'
+          yamllint_flags: 'apis/ operations/ platform/ examples/ tests/'
           fail_on_error: true
