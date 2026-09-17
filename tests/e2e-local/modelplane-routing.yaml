@@ -1,0 +1,51 @@
+# Put Modelplane's routing layer in front of a local engine, with no GPU and no
+# inference cluster.
+#
+# Points at the MOCK engine by default, not the CPU model. What this tier tests
+# is Modelplane's routing - ModelEndpoint -> ModelService -> HTTPRoute and the
+# status.address plumbing - and the mock serves the same OpenAI routes for ~15
+# MiB where the CPU model wants ~4 GiB. Modelplane's serving stack is itself
+# several GiB, so keeping the engine cheap here is what makes the tier
+# comfortably runnable. Swap the url below to
+#   http://llamacpp.cpu-model.svc.cluster.local:8000
+# to route to the real CPU model instead once you have the headroom.
+#
+# ModelEndpoint.spec.url is parsed with plain urllib.parse and emits an
+# EndpointSlice with addressType FQDN for any non-IP host, so a cluster-local
+# Service works - it is not restricted to external SaaS providers. That means
+# the ModelService/HTTPRoute path can be exercised without an InferenceCluster,
+# an InferenceClass, DRA, or the serving stack.
+#
+# Requires an InferenceGateway named "default" to exist, because ModelService
+# composes an HTTPRoute whose parentRef is the gateway in modelplane-system. On
+# kind that means the MetalLB variant - see platform/20-inference-gateway.yaml.
+#
+# What this tier adds over pointing OPENAI_BASE_URL straight at the Service:
+# coverage of Modelplane's own routing and status.address plumbing. What it
+# still does not cover: the fleet scheduler, DRA claims, or GPU provisioning.
+---
+apiVersion: modelplane.ai/v1alpha1
+kind: ModelEndpoint
+metadata:
+  name: local-engine
+  namespace: ml-team
+  labels:
+    # Any label works; a ModelService selects on it.
+    modelplane.ai/local-engine: mock
+spec:
+  url: http://mock-engine.mock-model.svc.cluster.local:8000
+  # A ModelService receives requests at /<namespace>/<service>/v1/... and strips
+  # only the /<namespace>/<service>/ prefix, so an engine already serving
+  # /v1/... takes just /.
+  rewritePath: /
+---
+apiVersion: modelplane.ai/v1alpha1
+kind: ModelService
+metadata:
+  name: qwen3-8b
+  namespace: ml-team
+spec:
+  endpoints:
+  - selector:
+      matchLabels:
+        modelplane.ai/local-engine: mock

@@ -1,0 +1,30 @@
+endpoint: http://localhost:18002/v1
+model:    Qwen/Qwen3-8B-GGUF:Q4_K_M
+repeats:  1 per case (temperature 0, so variance means instability)
+
+prompt:   tests/e2e-local/../../operations/rds-intelligent-scaling-watch/operation.yaml
+          system=233ch user=2495ch
+
+case                               expected       got                            verdict
+gate: change already in flight     noop           scale                          OVER-SCALED
+gate: instance modifying           noop           scale                          OVER-SCALED
+gate: observed fields empty        noop           scale                          OVER-SCALED
+gate: at largest, wants up         noop           scale                          OVER-SCALED
+gate: at smallest, wants down      noop           scale                          OVER-SCALED
+scale up: cpu 95                   db.t3.small    scale                          correct
+scale up: cpu 81 (just over)       db.t3.medium   scale                          correct
+noop: cpu 79 (just under)          noop           scale                          OVER-SCALED
+noop: cpu 45 mid-range             noop           scale                          OVER-SCALED
+noop: low cpu but high conns       noop           scale                          OVER-SCALED
+scale down: all conditions         db.t3.small    scale                          correct
+gate: no metrics                   noop           scale                          OVER-SCALED
+
+verdicts:
+  OVER-SCALED      9  (75%)
+  correct          3  (25%)
+
+CORRECT DECISIONS: 3/12 = 25%
+  OVER-SCALED 9 times - this is the expensive failure. It scales a database that did not need it.
+
+Verdict on this model for the acceptance demo:
+  NOT SUITABLE - over-scales 75% of the time, which costs money and inverts the cost argument.

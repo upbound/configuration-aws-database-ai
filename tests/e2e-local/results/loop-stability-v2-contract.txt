@@ -1,0 +1,35 @@
+sampling every 20s: resourceVersion must STOP climbing, lastScheduleTime must STOP advancing
+  t+20  s  rv=161746   lastSchedule=2026-09-09T10:06:48Z  mockCalls=1
+  t+40  s  rv=161746   lastSchedule=2026-09-09T10:06:48Z  mockCalls=1
+  t+60  s  rv=161746   lastSchedule=2026-09-09T10:06:48Z  mockCalls=1
+  t+80  s  rv=161746   lastSchedule=2026-09-09T10:06:48Z  mockCalls=1
+  t+100 s  rv=161746   lastSchedule=2026-09-09T10:06:48Z  mockCalls=1
+  t+120 s  rv=161746   lastSchedule=2026-09-09T10:06:48Z  mockCalls=1
+  t+140 s  rv=161746   lastSchedule=2026-09-09T10:06:48Z  mockCalls=1
+  t+160 s  rv=161746   lastSchedule=2026-09-09T10:06:48Z  mockCalls=1
+  t+180 s  rv=161746   lastSchedule=2026-09-09T10:06:48Z  mockCalls=1
+  t+200 s  rv=161746   lastSchedule=2026-09-09T10:06:48Z  mockCalls=1
+  t+220 s  rv=161746   lastSchedule=2026-09-09T10:06:48Z  mockCalls=1
+  t+240 s  rv=161746   lastSchedule=2026-09-09T10:06:48Z  mockCalls=1
+
+[exited with code 0]
+
+--- what this proves ---
+The v2 prompt's no-op contract is "restate the current instanceClass with no
+annotations". That is only safe if an identical server-side apply does not bump
+resourceVersion - otherwise every no-op is a write, the write re-triggers the
+WatchOperation, and the loop never settles.
+
+12 samples over 4 minutes: resourceVersion frozen at 161746, lastScheduleTime
+frozen, exactly 1 model call. Confirmed safe.
+
+Reproduce: set the mock to MOCK_MODE=noop-explicit, settle the gates so the
+model is actually consulted (observedInstanceClass == spec.parameters.
+instanceClass, observedInstanceStatus == available), then sample.
+
+Note the first attempt at this test was invalid: `kubectl apply --server-side`
+with a different field manager triggers an SSA migration, strips fields the
+manager does not own, and fails XRD validation. It says nothing about the real
+path. The Operation applies with field manager
+ops.crossplane.io/operation/<uid> - a per-operation UID - so the test has to go
+through the Operation machinery.

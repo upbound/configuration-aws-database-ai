@@ -1,0 +1,100 @@
+# A real (small) model on CPU, as an ordinary Deployment. No GPU, no DRA, no
+# Modelplane.
+#
+# The mock engine tests the contract; this tests whether the prompt survives a
+# real model. Those are different failures. A real small model will sometimes
+# fence its JSON, add a preamble, miscopy the resource name, or misread the
+# convergence gate - and function-openai discards all of those SILENTLY today.
+# Expect this tier to find prompt bugs, and treat a quiet Operation log as
+# suspicious rather than good.
+#
+# llama.cpp defaults to port 8080; 8000 here matches what the rest of the setup
+# expects. --jinja uses the model's own chat template, which matters for
+# instruction following.
+#
+# Model choice is the real decision here, and it is a genuine trade. Any GGUF
+# repo works with the -hf user/repo:quant form.
+#
+#   Qwen/Qwen2.5-0.5B-Instruct-GGUF:q4_k_m    ~0.4G weights, ~0.6Gi RSS (measured)
+#   Qwen/Qwen2.5-1.5B-Instruct-GGUF:q4_k_m    ~1.0G weights, ~2.0Gi RSS  (default)
+#   Qwen/Qwen2.5-3B-Instruct-GGUF:q4_k_m      ~1.9G weights, ~3.0Gi RSS
+#
+# Resource requests below are sized for the 1.5B default; drop memory to 1536Mi
+# for the 0.5B or raise it to 4Gi for the 3B. The earlier 4Gi request here was
+# simply over-provisioned - it made this tier look far heavier than it is.
+#
+# Smaller is faster on CPU and much lighter, but worse at emitting exact JSON,
+# and this task needs exact JSON. See the measured comparison in COST.md before
+# picking - do not assume the smallest one works.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cpu-model
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llamacpp
+  namespace: cpu-model
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: llamacpp
+  template:
+    metadata:
+      labels:
+        app: llamacpp
+    spec:
+      volumes:
+      # Per-pod, so weights are re-downloaded on every restart. Fine for a
+      # one-off; use a PVC if you are iterating.
+      - name: model-cache
+        emptyDir: {}
+      containers:
+      - name: engine
+        image: ghcr.io/ggml-org/llama.cpp:server
+        args:
+        - "-hf"
+        - "Qwen/Qwen2.5-1.5B-Instruct-GGUF:q4_k_m"
+        - "--host"
+        - "0.0.0.0"
+        - "--port"
+        - "8000"
+        - "--ctx-size"
+        - "8192"
+        - "--jinja"
+        - "--temp"
+        - "0"
+        ports:
+        - containerPort: 8000
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          # First start downloads the model, which takes a while on a cold
+          # cache. The emptyDir below is per-pod, so every restart re-downloads;
+          # swap it for a PersistentVolumeClaim if you iterate on this often.
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          failureThreshold: 40
+        resources:
+          requests:
+            cpu: "2"
+            memory: 2Gi
+        volumeMounts:
+        - name: model-cache
+          mountPath: /root/.cache/llama.cpp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llamacpp
+  namespace: cpu-model
+spec:
+  selector:
+    app: llamacpp
+  ports:
+  - port: 8000
+    targetPort: 8000

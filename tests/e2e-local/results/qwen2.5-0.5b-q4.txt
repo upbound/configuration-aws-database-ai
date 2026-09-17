@@ -1,0 +1,32 @@
+endpoint: http://localhost:18000/v1
+model:    Qwen/Qwen2.5-0.5B-Instruct-GGUF:q4_k_m
+repeats:  2 per case (temperature 0, so variance means instability)
+
+prompt: system=234ch user=2496ch (extracted from the live operation)
+
+case                               expected       got                            verdict
+gate: change already in flight     noop           prose,prose                    malformed
+gate: instance modifying           noop           prose,prose                    malformed
+gate: observed fields empty        noop           prose,prose                    malformed
+gate: at largest, wants up         noop           prose,prose                    malformed
+gate: at smallest, wants down      noop           scale,prose                    OVER-SCALED,malformed  (unstable)
+scale up: cpu 95                   db.t3.small    scale,prose                    malformed,wrong-class  (unstable)
+scale up: cpu 81 (just over)       db.t3.medium   scale,scale                    wrong-class
+noop: cpu 79 (just under)          noop           scale,scale                    OVER-SCALED
+noop: cpu 45 mid-range             noop           scale,scale                    OVER-SCALED
+noop: low cpu but high conns       noop           scale,scale                    OVER-SCALED
+scale down: all conditions         db.t3.small    scale,scale                    wrong-class
+gate: no metrics                   noop           scale,scale                    OVER-SCALED
+
+verdicts:
+  malformed       10  (42%)
+  OVER-SCALED      9  (38%)
+  wrong-class      5  (21%)
+
+CORRECT DECISIONS: 0/24 = 0%
+  OVER-SCALED 9 times - this is the expensive failure. It scales a database that did not need it.
+  malformed 10 - no patch emitted, so safe but useless
+  2/12 cases differed across repeats at temperature 0
+
+Verdict on this model for the acceptance demo:
+  NOT SUITABLE - it scales databases that do not need scaling.

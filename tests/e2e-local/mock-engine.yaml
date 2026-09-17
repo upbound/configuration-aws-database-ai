@@ -1,0 +1,297 @@
+# A scriptable stand-in for the model, for testing the control-plane path with
+# no GPU, no Modelplane and no cloud account.
+#
+# function-openai reads its endpoint from the `gpt` Secret, so it cannot tell
+# whether a real inference cluster or this pod is behind that URL. That is what
+# lets the whole WatchOperation -> function -> patch path be tested for free.
+#
+# A scripted mock is not a compromise here, it is the better instrument. The
+# failures most likely to bite are contract failures, not reasoning failures,
+# and only a mock can force each one on demand. In particular, loop stability
+# cannot be tested with a real model: a real model occasionally emits something,
+# so you can never prove the no-op path is silent.
+#
+# MOCK_MODE selects the behaviour:
+#
+#   decide   (default) scale up when the prompt shows CPUUtilization > 80,
+#                      otherwise reply empty. The happy path.
+#   empty              always reply empty. Operation count MUST plateau.
+#   fenced             wrap the patch in ```json fences. Reproduces the known
+#                      function-openai gap: resourceFrom does not strip fences
+#                      on the operation path, so this is DISCARDED SILENTLY -
+#                      FunctionSuccess stays True and nothing is scaled.
+#   garbage            reply with prose. Also discarded silently today.
+#   foreign-resource   reply with a resource OTHER than the watched one, copied
+#                      from the prompt's own few-shot example. Reproduces the
+#                      wrong-resource bug a real model produced under load.
+#                      With the identity guard in function-openai this must be
+#                      REFUSED: FunctionSuccess=False, ResourceIdentityMismatch,
+#                      nothing applied. Without it, Crossplane tries to patch
+#                      another team's database.
+#   noop-explicit      restate the current class with no annotations - the v2
+#                      prompt's "nothing needed" contract. Use it to prove the
+#                      watch settles: an identical server-side apply must not
+#                      bump resourceVersion, or every no-op becomes a write and
+#                      the loop never ends.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mock-model
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mock-engine
+  namespace: mock-model
+data:
+  server.py: |
+    import html, json, os, re, http.server
+
+    MODE = os.environ.get("MOCK_MODE", "decide")
+
+    def find_resource(prompt):
+        """Pull the SQLInstance out of the prompt.
+
+        Parse rather than regex. The resource arrives as indented JSON with keys
+        in alphabetical order, so "unit" precedes "value" inside each metric -
+        a pattern like '"CPUUtilization":\\s*{\\s*"value"' silently never
+        matches. The prompt also contains an example manifest in its output
+        rules, so pick the largest object that actually carries a status.
+        """
+        # WORKAROUND for an upstream bug, not a nicety. function-openai builds
+        # the prompt with html/template (fn.go:22) rather than text/template, so
+        # every interpolated value is HTML-escaped: {{ .Resources }} arrives
+        # with each " turned into &#34;. The resource is then not parseable as
+        # JSON at all, and it is ~1.3x larger for nothing.
+        #
+        # A frontier model would probably cope with escaped JSON; a small one
+        # is far less likely to, and no parser will. The real fix is one line
+        # upstream - html/template -> text/template. Until that ships, undo it
+        # here so the rest of the path can be tested.
+        prompt = html.unescape(prompt)
+
+        dec = json.JSONDecoder()
+        best = None
+        for i, ch in enumerate(prompt):
+            if ch != "{":
+                continue
+            try:
+                obj, end = dec.raw_decode(prompt, i)
+            except ValueError:
+                continue
+            if not isinstance(obj, dict) or obj.get("kind") != "SQLInstance":
+                continue
+            if best is None or (end - i) > best[1]:
+                best = (obj, end - i)
+        return best[0] if best else None
+
+    def build_patch(prompt):
+        if MODE == "empty":
+            return ""
+        if MODE == "garbage":
+            return "I think you should probably scale this one up a bit."
+        if MODE == "foreign-resource":
+            # Reply with a DIFFERENT resource than the one asked about, copied
+            # verbatim from example 4 of the operation's few-shot prompt.
+            #
+            # This is not invented: a self-hosted 1.5B did exactly this under
+            # concurrent load, 5 of 8 Operations, and Crossplane attempted the
+            # apply. It only failed safe because team-y did not exist. A real
+            # model cannot be made to do it on demand, so the mock forces it.
+            #
+            # Expected with the identity guard: FunctionSuccess=False, reason
+            # ResourceIdentityMismatch, and NOTHING applied.
+            return json.dumps({
+                "apiVersion": "aws.platform.upbound.io/v1alpha1",
+                "kind": "SQLInstance",
+                "metadata": {
+                    "name": "db-d",
+                    "namespace": "team-y",
+                    "annotations": {
+                        "intelligent-scaling/reasoning":
+                            "CPU 93% sustained above 80%",
+                    },
+                },
+                "spec": {"parameters": {"instanceClass": "db.t3.small"}},
+            })
+        if MODE == "noop-explicit":
+            # The v2 prompt contract: restate the CURRENT class with no
+            # annotations to mean "nothing needed". Whether that is a genuine
+            # no-write - and therefore whether the watch settles - is exactly
+            # what this mode exists to test.
+            res = find_resource(prompt)
+            if not res:
+                return ""
+            meta = res.get("metadata") or {}
+            cur = ((res.get("spec") or {}).get("parameters") or {}).get("instanceClass")
+            if not (meta.get("name") and meta.get("namespace") and cur):
+                return ""
+            return json.dumps({
+                "apiVersion": "aws.platform.upbound.io/v1alpha1",
+                "kind": "SQLInstance",
+                "metadata": {"name": meta["name"], "namespace": meta["namespace"]},
+                "spec": {"parameters": {"instanceClass": cur}},
+            }, separators=(",", ":"))
+
+        res = find_resource(prompt)
+        if not res:
+            # Log enough to tell a prompt-shape problem from a gate decision.
+            # "no resource found" almost always means the prompt template did
+            # not interpolate - check that userPrompt still contains
+            # {{ .Resources }}.
+            print("  DECLINED: no SQLInstance found in prompt "
+                  "(len=%d, braces=%d)" % (len(prompt), prompt.count("{")),
+                  flush=True)
+            print("  PROMPT TAIL: %r" % prompt[-400:], flush=True)
+            return ""
+
+        meta = res.get("metadata") or {}
+        name, ns = meta.get("name"), meta.get("namespace")
+        params = ((res.get("spec") or {}).get("parameters") or {})
+        st = res.get("status") or {}
+        want = params.get("instanceClass")
+        got = st.get("observedInstanceClass")
+        obs_status = st.get("observedInstanceStatus")
+        metrics = ((st.get("performanceMetrics") or {}).get("metrics") or {})
+        cpu = (metrics.get("CPUUtilization") or {}).get("value")
+
+        if not (name and ns) or cpu is None:
+            print("  DECLINED: name=%r ns=%r cpu=%r" % (name, ns, cpu), flush=True)
+            # name=COPY_NAME means the example manifest in the prompt's own
+            # output rules was the only SQLInstance present, i.e. the real
+            # resource never interpolated. Dump the prompt so the shape is
+            # visible rather than guessed at.
+            print("  PROMPT (%d chars): %r" % (len(prompt), prompt[:600]), flush=True)
+            print("  PROMPT TAIL: %r" % prompt[-600:], flush=True)
+            return ""
+
+        # The same gates the real prompt asks for, so the mock exercises the
+        # convergence logic rather than bypassing it. Each declining gate says
+        # so, because a silent no-op is indistinguishable from a broken rig.
+        if not obs_status or obs_status != "available":
+            print("  DECLINED gate: observedInstanceStatus=%r (need 'available')"
+                  % obs_status, flush=True)
+            return ""
+        if not got or got != want:
+            print("  DECLINED gate: change in flight, "
+                  "observedInstanceClass=%r want=%r" % (got, want), flush=True)
+            return ""
+        if float(cpu) <= 80:
+            print("  DECLINED gate: cpu=%s not above 80" % cpu, flush=True)
+            return ""
+
+        steps = ["db.t3.micro", "db.t3.small", "db.t3.medium", "db.t3.large"]
+        if want not in steps or steps.index(want) == len(steps) - 1:
+            print("  DECLINED gate: no step above %r" % want, flush=True)
+            return ""
+        nxt = steps[steps.index(want) + 1]
+
+        patch = json.dumps({
+            "apiVersion": "aws.platform.upbound.io/v1alpha1",
+            "kind": "SQLInstance",
+            "metadata": {
+                "name": name,
+                "namespace": ns,
+                "annotations": {
+                    "intelligent-scaling/reasoning":
+                        "mock: CPU %s%% above 80%%" % cpu,
+                },
+            },
+            "spec": {"parameters": {"instanceClass": nxt}},
+        }, separators=(",", ":"))
+
+        if MODE == "fenced":
+            return "```json\n" + patch + "\n```"
+        return patch
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def _send(self, obj, code=200):
+            b = json.dumps(obj).encode()
+            self.send_response(code)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+
+        def do_GET(self):
+            if self.path == "/health":
+                self._send({"status": "ok", "mode": MODE})
+            elif self.path.startswith("/v1/models"):
+                self._send({"object": "list",
+                            "data": [{"id": "qwen", "object": "model"}]})
+            else:
+                self._send({"error": "not found"}, 404)
+
+        def do_POST(self):
+            n = int(self.headers.get("content-length") or 0)
+            raw = self.rfile.read(n).decode("utf-8", "replace")
+            try:
+                prompt = " ".join(m.get("content", "")
+                                  for m in json.loads(raw).get("messages") or [])
+            except Exception:
+                prompt = raw
+            content = build_patch(prompt)
+            print("MODE=%s -> %r" % (MODE, content[:120]), flush=True)
+            # OpenAI chat-completions shape, which is what function-openai reads.
+            self._send({
+                "id": "chatcmpl-mock", "object": "chat.completion", "model": "qwen",
+                "choices": [{"index": 0, "finish_reason": "stop",
+                             "message": {"role": "assistant", "content": content}}],
+                "usage": {"prompt_tokens": len(prompt) // 4,
+                          "completion_tokens": len(content) // 4,
+                          "total_tokens": (len(prompt) + len(content)) // 4},
+            })
+
+        def log_message(self, *a):
+            pass
+
+    http.server.HTTPServer(("0.0.0.0", 8000), H).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-engine
+  namespace: mock-model
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mock-engine
+  template:
+    metadata:
+      labels:
+        app: mock-engine
+    spec:
+      containers:
+      - name: engine
+        image: python:3.12-alpine
+        command: ["python", "-u", "/srv/server.py"]
+        env:
+        - name: MOCK_MODE
+          value: decide
+        ports:
+        - containerPort: 8000
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+        volumeMounts:
+        - name: src
+          mountPath: /srv
+      volumes:
+      - name: src
+        configMap:
+          name: mock-engine
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-engine
+  namespace: mock-model
+spec:
+  selector:
+    app: mock-engine
+  ports:
+  - port: 8000
+    targetPort: 8000

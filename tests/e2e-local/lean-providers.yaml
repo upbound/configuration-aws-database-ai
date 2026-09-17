@@ -1,0 +1,74 @@
+# Keep Modelplane's unused cloud providers dormant, WITHOUT killing the ones
+# this configuration needs.
+#
+# Modelplane's Configuration depends on ~14 providers that exist only to
+# *provision* clusters - GCP, Azure, Nebius, Vultr, AWS EKS/IAM/EFA. None of
+# them are used when the model is served from a Deployment already on the
+# cluster, but they still pull images and run controllers.
+#
+# Modelplane ships its own trim at e2e/lean-control-plane.yaml. DO NOT use it
+# here: it matches the prefix `provider-aws-`, which also catches
+# provider-aws-rds and provider-aws-ec2 - the two this configuration actually
+# needs. An ImageConfig runtime overrides even an explicit runtimeConfigRef on
+# the Provider, so that trim would silently scale the RDS provider to zero and
+# the scaling demo would stop working with no obvious cause.
+#
+# So the AWS families are matched individually below. A provider not listed here
+# stays active: forgetting one costs an idle controller pod, listing one you
+# need costs a broken demo. Err toward leaving things running.
+#
+# IMPORTANT: under `up project run` the ImageConfig below is NOT ENOUGH on its
+# own, and applying it first does not help. Measured both ways - before and
+# after the Configuration - and all ten target providers stayed at ready=1/1.
+#
+# Why: UXP sets an explicit `runtimeConfigRef: {name: default}` on every
+# provider it installs, and an explicit ref on the Provider beats a runtime
+# supplied by an ImageConfig. Modelplane's own trim works because its e2e uses
+# plain `crossplane project run`, which does not inject that ref.
+#
+# So this file is necessary but not sufficient. After the Configuration is
+# Healthy, repoint the dormant providers explicitly with apply-lean-providers.sh
+# (next to this file), which patches only the providers neither side needs.
+#
+# Verified afterwards: the ten dormant providers drop to 0/0, the five active
+# ones stay at 1/1, and Modelplane's Configuration REMAINS Healthy=True -
+# package health does not depend on pod readiness.
+---
+apiVersion: pkg.crossplane.io/v1beta1
+kind: DeploymentRuntimeConfig
+metadata:
+  name: scale-to-zero
+spec:
+  deploymentTemplate:
+    spec:
+      selector: {}
+      replicas: 0
+      template: {}
+---
+apiVersion: pkg.crossplane.io/v1beta1
+kind: ImageConfig
+metadata:
+  name: dormant-cloud-providers
+spec:
+  matchImages:
+  # Other clouds - never used by this configuration.
+  - type: Prefix
+    prefix: xpkg.upbound.io/upbound/provider-gcp-
+  - type: Prefix
+    prefix: xpkg.upbound.io/upbound/provider-azure-
+  - type: Prefix
+    prefix: xpkg.upbound.io/upbound/provider-nebius
+  - type: Prefix
+    prefix: xpkg.upbound.io/upbound/provider-vultr
+  # AWS, named individually. provider-aws-rds and provider-aws-ec2 are
+  # deliberately absent: this configuration composes RDS instances and reads
+  # subnets/security groups through them.
+  - type: Prefix
+    prefix: xpkg.upbound.io/upbound/provider-aws-eks
+  - type: Prefix
+    prefix: xpkg.upbound.io/upbound/provider-aws-iam
+  - type: Prefix
+    prefix: xpkg.upbound.io/upbound/provider-aws-efs
+  runtime:
+    configRef:
+      name: scale-to-zero

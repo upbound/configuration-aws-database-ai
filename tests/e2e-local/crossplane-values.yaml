@@ -1,0 +1,10 @@
+# Crossplane helm values for a local dev control plane that will host Modelplane.
+#
+# Modelplane ships a ManagedResourceActivationPolicy that governs which managed
+# resources are active. Crossplane's default activations must be cleared for it
+# to take effect, otherwise every managed resource in every installed provider
+# activates and the control plane does far more work than it needs to.
+#
+# Pass with: up project run --local --helm-values tests/e2e-local/crossplane-values.yaml
+provider:
+  defaultActivations: []

@@ -1,0 +1,38 @@
+# An observed RDS Instance for verifying the scaling convergence gate without a
+# cloud account:
+#
+#   up composition render --xrd=apis/definition.yaml \
+#     apis/composition-rds-metrics.yaml \
+#     examples/mariadb-xr-rds-metrics.yaml \
+#     --function-credentials=tests/test-credentials.yaml \
+#     --observed-resources=tests/fixtures/observed-rds-instance.yaml
+#
+# Expect status.observedInstanceClass and status.observedInstanceStatus on the
+# rendered XR. Those two fields are what the WatchOperation's prompt compares
+# against spec.parameters.instanceClass to decide whether a change is already in
+# flight - the clock-free replacement for a wall-clock cooldown.
+#
+# atProvider.status here is deliberately "modifying", the case that must
+# suppress a new decision. The path must be given relative to the project root;
+# an absolute path is rejected.
+apiVersion: rds.aws.m.upbound.io/v1beta1
+kind: Instance
+metadata:
+  name: rds-metrics-database-ai-mysql-b5bf059ef421
+  namespace: database-team
+  annotations:
+    crossplane.io/composition-resource-name: rds-instance
+  labels:
+    crossplane.io/composite: rds-metrics-database-ai-mysql
+spec:
+  forProvider:
+    region: us-west-2
+    instanceClass: db.t3.small
+    username: masteruser
+status:
+  atProvider:
+    instanceClass: db.t3.micro
+    status: modifying
+    endpoint: rds-metrics-database-ai-mysql.abc.us-west-2.rds.amazonaws.com:3306
+    address: rds-metrics-database-ai-mysql.abc.us-west-2.rds.amazonaws.com
+    port: 3306

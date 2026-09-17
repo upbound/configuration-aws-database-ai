@@ -1,0 +1,31 @@
+endpoint: http://localhost:18002/v1
+model:    Qwen/Qwen3-8B-GGUF:Q4_K_M
+repeats:  1 per case (temperature 0, so variance means instability)
+
+prompt:   tests/e2e-local/prompt-variants/v2-fewshot.yaml
+          system=253ch user=3163ch
+
+case                               expected       got                            verdict
+gate: change already in flight     noop           noop-explicit                  correct
+gate: instance modifying           noop           noop-explicit                  correct
+gate: observed fields empty        noop           scale                          OVER-SCALED
+gate: at largest, wants up         noop           noop-explicit                  correct
+gate: at smallest, wants down      noop           noop-explicit                  correct
+scale up: cpu 95                   db.t3.small    scale                          correct
+scale up: cpu 81 (just over)       db.t3.medium   noop-explicit                  missed
+noop: cpu 79 (just under)          noop           noop-explicit                  correct
+noop: cpu 45 mid-range             noop           noop-explicit                  correct
+noop: low cpu but high conns       noop           noop-explicit                  correct
+scale down: all conditions         db.t3.small    noop-explicit                  missed
+gate: no metrics                   noop           scale                          OVER-SCALED
+
+verdicts:
+  correct          8  (67%)
+  OVER-SCALED      2  (17%)
+  missed           2  (17%)
+
+CORRECT DECISIONS: 8/12 = 67%
+  OVER-SCALED 2 times - this is the expensive failure. It scales a database that did not need it.
+
+Verdict on this model for the acceptance demo:
+  NOT SUITABLE - over-scales 17% of the time, which costs money and inverts the cost argument.

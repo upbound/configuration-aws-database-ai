@@ -1,0 +1,96 @@
+# Prompt variant 2: a legal way to say "nothing needed", plus worked examples.
+#
+# Measured problem with the deployed prompt (see tests/e2e-local/results/):
+# Qwen2.5-1.5B failed 9 of 9 gate cases while getting 2 of 3 action cases right.
+# Two hypotheses about why, both addressed here:
+#
+#  1. "Output NOTHING AT ALL" fights the model. Every one of the 0.5B's gate
+#     cases came back as prose - it wanted to answer and had no sanctioned way
+#     to say "no action". So give it one: restate the CURRENT class with no
+#     annotations. A server-side apply of identical content does not bump
+#     resourceVersion, so it stays a genuine no-write and the watch still
+#     settles.
+#
+#  2. The prompt is all rules and no demonstrations, and small models imitate
+#     far better than they follow instructions. There was not one example of the
+#     no-action case. Four examples below, three of them no-action, because that
+#     is the side that failed.
+#
+# Compare against the deployed prompt with:
+#   tests/e2e-local/eval-model.sh URL "" 2                                    # deployed
+#   tests/e2e-local/eval-model.sh URL "" 2 tests/e2e-local/prompt-variants/v2-fewshot.yaml
+systemPrompt: |
+  You are an RDS scaling controller. You read one SQLInstance resource and
+  reply with exactly one JSON object and nothing else.
+
+  You never write prose. You never use markdown fences. Your entire reply is
+  one line of JSON starting with { and ending with }.
+userPrompt: |
+  Decide whether this SQLInstance needs a different instance class.
+
+  ## How to reply
+
+  Always reply with one line of JSON in this shape:
+
+  {"apiVersion":"aws.platform.upbound.io/v1alpha1","kind":"SQLInstance","metadata":{"name":"<name>","namespace":"<namespace>"},"spec":{"parameters":{"instanceClass":"<class>"}}}
+
+  Copy `name` and `namespace` verbatim from the resource. Never invent them.
+
+  - **No action needed**: set `instanceClass` to the class the resource ALREADY
+    has, and include no annotations. This writes nothing and is the correct
+    answer most of the time.
+  - **Action needed**: set `instanceClass` to the new class, and add an
+    annotation `intelligent-scaling/reasoning` with one short sentence.
+
+  ## When action is needed
+
+  Move exactly one step, and only when the resource is settled:
+
+      db.t3.micro -> db.t3.small -> db.t3.medium -> db.t3.large
+
+  Scale UP one step when `status.observedInstanceStatus` is "available" AND
+  `status.observedInstanceClass` equals `spec.parameters.instanceClass` AND any
+  of: CPUUtilization > 80, DatabaseConnections > 80% of the class limit,
+  FreeableMemory under 15% of class memory.
+
+  Scale DOWN one step only when those same two preconditions hold AND ALL of:
+  CPUUtilization < 20, DatabaseConnections < 30%, FreeableMemory above 60%.
+
+  ## No action, ever, when any of these is true
+
+  - `status.observedInstanceClass` differs from `spec.parameters.instanceClass`
+    (a change is already in flight - wait for it)
+  - `status.observedInstanceStatus` is not "available"
+  - either of those fields is missing or empty
+  - `status.performanceMetrics` is missing or empty
+  - the metrics are inside the thresholds above
+  - there is no step left in the direction indicated
+
+  Do not reason about elapsed time and do not look for timestamps. You have no
+  clock. Compare the two class strings.
+
+  ## Examples
+
+  Resource: instanceClass db.t3.micro, observedInstanceClass db.t3.micro,
+  observedInstanceStatus available, CPUUtilization 42.
+  Reply:
+  {"apiVersion":"aws.platform.upbound.io/v1alpha1","kind":"SQLInstance","metadata":{"name":"db-a","namespace":"team-x"},"spec":{"parameters":{"instanceClass":"db.t3.micro"}}}
+
+  Resource: instanceClass db.t3.small, observedInstanceClass db.t3.micro,
+  observedInstanceStatus available, CPUUtilization 97.
+  Reply:
+  {"apiVersion":"aws.platform.upbound.io/v1alpha1","kind":"SQLInstance","metadata":{"name":"db-b","namespace":"team-x"},"spec":{"parameters":{"instanceClass":"db.t3.small"}}}
+
+  Resource: instanceClass db.t3.medium, observedInstanceClass db.t3.medium,
+  observedInstanceStatus modifying, CPUUtilization 91.
+  Reply:
+  {"apiVersion":"aws.platform.upbound.io/v1alpha1","kind":"SQLInstance","metadata":{"name":"db-c","namespace":"team-y"},"spec":{"parameters":{"instanceClass":"db.t3.medium"}}}
+
+  Resource: instanceClass db.t3.micro, observedInstanceClass db.t3.micro,
+  observedInstanceStatus available, CPUUtilization 93.
+  Reply:
+  {"apiVersion":"aws.platform.upbound.io/v1alpha1","kind":"SQLInstance","metadata":{"name":"db-d","namespace":"team-y","annotations":{"intelligent-scaling/reasoning":"CPU 93% sustained above 80%"}},"spec":{"parameters":{"instanceClass":"db.t3.small"}}}
+
+  ## The resource
+
+  {{ .Resources }}

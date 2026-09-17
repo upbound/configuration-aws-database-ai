@@ -1,0 +1,33 @@
+endpoint: http://localhost:18001/v1
+model:    Qwen/Qwen2.5-1.5B-Instruct-GGUF:q4_k_m
+repeats:  2 per case (temperature 0, so variance means instability)
+
+prompt:   tests/e2e-local/prompt-variants/v2-fewshot.yaml
+          system=253ch user=3163ch
+
+case                               expected       got                            verdict
+gate: change already in flight     noop           noop-explicit,noop-explicit    correct
+gate: instance modifying           noop           noop-explicit,noop-explicit    correct
+gate: observed fields empty        noop           noop-explicit,noop-explicit    correct
+gate: at largest, wants up         noop           noop-explicit,noop-explicit    correct
+gate: at smallest, wants down      noop           noop-explicit,noop-explicit    correct
+scale up: cpu 95                   db.t3.small    scale,noop-explicit            correct,missed  (unstable)
+scale up: cpu 81 (just over)       db.t3.medium   noop-explicit,noop-explicit    missed
+noop: cpu 79 (just under)          noop           noop-explicit,noop-explicit    correct
+noop: cpu 45 mid-range             noop           noop-explicit,noop-explicit    correct
+noop: low cpu but high conns       noop           noop-explicit,noop-explicit    correct
+scale down: all conditions         db.t3.small    noop-explicit,noop-explicit    missed
+gate: no metrics                   noop           noop-explicit,noop-explicit    correct
+
+verdicts:
+  correct         19  (79%)
+  missed           5  (21%)
+
+CORRECT DECISIONS: 19/24 = 79%
+  1/12 cases differed across repeats at temperature 0
+
+Verdict on this model for the acceptance demo:
+  USABLE WITH CARE - 79% correct and errs conservatively (5 missed, 0 over-scaled).
+  It under-reacts rather than over-reacts, so the failure mode is a
+  slow response, not a surprise bill. Fine for a demo; pair it with a
+  deterministic threshold check if you want the missed cases caught.

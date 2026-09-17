@@ -1,0 +1,606 @@
+[
+  {
+    "note": "gate: change already in flight",
+    "resource": {
+      "apiVersion": "aws.platform.upbound.io/v1alpha1",
+      "kind": "SQLInstance",
+      "metadata": {
+        "name": "g1",
+        "namespace": "database-team"
+      },
+      "spec": {
+        "parameters": {
+          "instanceClass": "db.t3.small",
+          "engine": "mariadb",
+          "engineVersion": "10.11",
+          "region": "us-west-2",
+          "storageGB": 5
+        }
+      },
+      "status": {
+        "observedInstanceClass": "db.t3.micro",
+        "observedInstanceStatus": "available",
+        "performanceMetrics": {
+          "metrics": {
+            "CPUUtilization": {
+              "value": 95,
+              "unit": "Percent"
+            },
+            "DatabaseConnections": {
+              "value": 10,
+              "unit": "Count"
+            },
+            "FreeableMemory": {
+              "value": 800000000,
+              "unit": "Bytes"
+            },
+            "FreeStorageSpace": {
+              "value": 2775404544,
+              "unit": "Bytes"
+            },
+            "ReadIOPS": {
+              "value": 40,
+              "unit": "Count/Second"
+            },
+            "WriteIOPS": {
+              "value": 20,
+              "unit": "Count/Second"
+            }
+          }
+        }
+      }
+    },
+    "expect": "noop"
+  },
+  {
+    "note": "gate: instance modifying",
+    "resource": {
+      "apiVersion": "aws.platform.upbound.io/v1alpha1",
+      "kind": "SQLInstance",
+      "metadata": {
+        "name": "g2",
+        "namespace": "database-team"
+      },
+      "spec": {
+        "parameters": {
+          "instanceClass": "db.t3.micro",
+          "engine": "mariadb",
+          "engineVersion": "10.11",
+          "region": "us-west-2",
+          "storageGB": 5
+        }
+      },
+      "status": {
+        "observedInstanceClass": "db.t3.micro",
+        "observedInstanceStatus": "modifying",
+        "performanceMetrics": {
+          "metrics": {
+            "CPUUtilization": {
+              "value": 95,
+              "unit": "Percent"
+            },
+            "DatabaseConnections": {
+              "value": 10,
+              "unit": "Count"
+            },
+            "FreeableMemory": {
+              "value": 800000000,
+              "unit": "Bytes"
+            },
+            "FreeStorageSpace": {
+              "value": 2775404544,
+              "unit": "Bytes"
+            },
+            "ReadIOPS": {
+              "value": 40,
+              "unit": "Count/Second"
+            },
+            "WriteIOPS": {
+              "value": 20,
+              "unit": "Count/Second"
+            }
+          }
+        }
+      }
+    },
+    "expect": "noop"
+  },
+  {
+    "note": "gate: observed fields empty",
+    "resource": {
+      "apiVersion": "aws.platform.upbound.io/v1alpha1",
+      "kind": "SQLInstance",
+      "metadata": {
+        "name": "g3",
+        "namespace": "database-team"
+      },
+      "spec": {
+        "parameters": {
+          "instanceClass": "db.t3.micro",
+          "engine": "mariadb",
+          "engineVersion": "10.11",
+          "region": "us-west-2",
+          "storageGB": 5
+        }
+      },
+      "status": {
+        "observedInstanceClass": "",
+        "observedInstanceStatus": "",
+        "performanceMetrics": {
+          "metrics": {
+            "CPUUtilization": {
+              "value": 95,
+              "unit": "Percent"
+            },
+            "DatabaseConnections": {
+              "value": 10,
+              "unit": "Count"
+            },
+            "FreeableMemory": {
+              "value": 800000000,
+              "unit": "Bytes"
+            },
+            "FreeStorageSpace": {
+              "value": 2775404544,
+              "unit": "Bytes"
+            },
+            "ReadIOPS": {
+              "value": 40,
+              "unit": "Count/Second"
+            },
+            "WriteIOPS": {
+              "value": 20,
+              "unit": "Count/Second"
+            }
+          }
+        }
+      }
+    },
+    "expect": "noop"
+  },
+  {
+    "note": "gate: at largest, wants up",
+    "resource": {
+      "apiVersion": "aws.platform.upbound.io/v1alpha1",
+      "kind": "SQLInstance",
+      "metadata": {
+        "name": "g4",
+        "namespace": "database-team"
+      },
+      "spec": {
+        "parameters": {
+          "instanceClass": "db.t3.large",
+          "engine": "mariadb",
+          "engineVersion": "10.11",
+          "region": "us-west-2",
+          "storageGB": 5
+        }
+      },
+      "status": {
+        "observedInstanceClass": "db.t3.large",
+        "observedInstanceStatus": "available",
+        "performanceMetrics": {
+          "metrics": {
+            "CPUUtilization": {
+              "value": 95,
+              "unit": "Percent"
+            },
+            "DatabaseConnections": {
+              "value": 10,
+              "unit": "Count"
+            },
+            "FreeableMemory": {
+              "value": 800000000,
+              "unit": "Bytes"
+            },
+            "FreeStorageSpace": {
+              "value": 2775404544,
+              "unit": "Bytes"
+            },
+            "ReadIOPS": {
+              "value": 40,
+              "unit": "Count/Second"
+            },
+            "WriteIOPS": {
+              "value": 20,
+              "unit": "Count/Second"
+            }
+          }
+        }
+      }
+    },
+    "expect": "noop"
+  },
+  {
+    "note": "gate: at smallest, wants down",
+    "resource": {
+      "apiVersion": "aws.platform.upbound.io/v1alpha1",
+      "kind": "SQLInstance",
+      "metadata": {
+        "name": "g5",
+        "namespace": "database-team"
+      },
+      "spec": {
+        "parameters": {
+          "instanceClass": "db.t3.micro",
+          "engine": "mariadb",
+          "engineVersion": "10.11",
+          "region": "us-west-2",
+          "storageGB": 5
+        }
+      },
+      "status": {
+        "observedInstanceClass": "db.t3.micro",
+        "observedInstanceStatus": "available",
+        "performanceMetrics": {
+          "metrics": {
+            "CPUUtilization": {
+              "value": 4,
+              "unit": "Percent"
+            },
+            "DatabaseConnections": {
+              "value": 1,
+              "unit": "Count"
+            },
+            "FreeableMemory": {
+              "value": 800000000,
+              "unit": "Bytes"
+            },
+            "FreeStorageSpace": {
+              "value": 2775404544,
+              "unit": "Bytes"
+            },
+            "ReadIOPS": {
+              "value": 40,
+              "unit": "Count/Second"
+            },
+            "WriteIOPS": {
+              "value": 20,
+              "unit": "Count/Second"
+            }
+          }
+        }
+      }
+    },
+    "expect": "noop"
+  },
+  {
+    "note": "scale up: cpu 95",
+    "resource": {
+      "apiVersion": "aws.platform.upbound.io/v1alpha1",
+      "kind": "SQLInstance",
+      "metadata": {
+        "name": "u1",
+        "namespace": "database-team"
+      },
+      "spec": {
+        "parameters": {
+          "instanceClass": "db.t3.micro",
+          "engine": "mariadb",
+          "engineVersion": "10.11",
+          "region": "us-west-2",
+          "storageGB": 5
+        }
+      },
+      "status": {
+        "observedInstanceClass": "db.t3.micro",
+        "observedInstanceStatus": "available",
+        "performanceMetrics": {
+          "metrics": {
+            "CPUUtilization": {
+              "value": 95,
+              "unit": "Percent"
+            },
+            "DatabaseConnections": {
+              "value": 10,
+              "unit": "Count"
+            },
+            "FreeableMemory": {
+              "value": 800000000,
+              "unit": "Bytes"
+            },
+            "FreeStorageSpace": {
+              "value": 2775404544,
+              "unit": "Bytes"
+            },
+            "ReadIOPS": {
+              "value": 40,
+              "unit": "Count/Second"
+            },
+            "WriteIOPS": {
+              "value": 20,
+              "unit": "Count/Second"
+            }
+          }
+        }
+      }
+    },
+    "expect": "db.t3.small"
+  },
+  {
+    "note": "scale up: cpu 81 (just over)",
+    "resource": {
+      "apiVersion": "aws.platform.upbound.io/v1alpha1",
+      "kind": "SQLInstance",
+      "metadata": {
+        "name": "u2",
+        "namespace": "database-team"
+      },
+      "spec": {
+        "parameters": {
+          "instanceClass": "db.t3.small",
+          "engine": "mariadb",
+          "engineVersion": "10.11",
+          "region": "us-west-2",
+          "storageGB": 5
+        }
+      },
+      "status": {
+        "observedInstanceClass": "db.t3.small",
+        "observedInstanceStatus": "available",
+        "performanceMetrics": {
+          "metrics": {
+            "CPUUtilization": {
+              "value": 81,
+              "unit": "Percent"
+            },
+            "DatabaseConnections": {
+              "value": 10,
+              "unit": "Count"
+            },
+            "FreeableMemory": {
+              "value": 800000000,
+              "unit": "Bytes"
+            },
+            "FreeStorageSpace": {
+              "value": 2775404544,
+              "unit": "Bytes"
+            },
+            "ReadIOPS": {
+              "value": 40,
+              "unit": "Count/Second"
+            },
+            "WriteIOPS": {
+              "value": 20,
+              "unit": "Count/Second"
+            }
+          }
+        }
+      }
+    },
+    "expect": "db.t3.medium"
+  },
+  {
+    "note": "noop: cpu 79 (just under)",
+    "resource": {
+      "apiVersion": "aws.platform.upbound.io/v1alpha1",
+      "kind": "SQLInstance",
+      "metadata": {
+        "name": "n1",
+        "namespace": "database-team"
+      },
+      "spec": {
+        "parameters": {
+          "instanceClass": "db.t3.small",
+          "engine": "mariadb",
+          "engineVersion": "10.11",
+          "region": "us-west-2",
+          "storageGB": 5
+        }
+      },
+      "status": {
+        "observedInstanceClass": "db.t3.small",
+        "observedInstanceStatus": "available",
+        "performanceMetrics": {
+          "metrics": {
+            "CPUUtilization": {
+              "value": 79,
+              "unit": "Percent"
+            },
+            "DatabaseConnections": {
+              "value": 10,
+              "unit": "Count"
+            },
+            "FreeableMemory": {
+              "value": 800000000,
+              "unit": "Bytes"
+            },
+            "FreeStorageSpace": {
+              "value": 2775404544,
+              "unit": "Bytes"
+            },
+            "ReadIOPS": {
+              "value": 40,
+              "unit": "Count/Second"
+            },
+            "WriteIOPS": {
+              "value": 20,
+              "unit": "Count/Second"
+            }
+          }
+        }
+      }
+    },
+    "expect": "noop"
+  },
+  {
+    "note": "noop: cpu 45 mid-range",
+    "resource": {
+      "apiVersion": "aws.platform.upbound.io/v1alpha1",
+      "kind": "SQLInstance",
+      "metadata": {
+        "name": "n2",
+        "namespace": "database-team"
+      },
+      "spec": {
+        "parameters": {
+          "instanceClass": "db.t3.small",
+          "engine": "mariadb",
+          "engineVersion": "10.11",
+          "region": "us-west-2",
+          "storageGB": 5
+        }
+      },
+      "status": {
+        "observedInstanceClass": "db.t3.small",
+        "observedInstanceStatus": "available",
+        "performanceMetrics": {
+          "metrics": {
+            "CPUUtilization": {
+              "value": 45,
+              "unit": "Percent"
+            },
+            "DatabaseConnections": {
+              "value": 10,
+              "unit": "Count"
+            },
+            "FreeableMemory": {
+              "value": 800000000,
+              "unit": "Bytes"
+            },
+            "FreeStorageSpace": {
+              "value": 2775404544,
+              "unit": "Bytes"
+            },
+            "ReadIOPS": {
+              "value": 40,
+              "unit": "Count/Second"
+            },
+            "WriteIOPS": {
+              "value": 20,
+              "unit": "Count/Second"
+            }
+          }
+        }
+      }
+    },
+    "expect": "noop"
+  },
+  {
+    "note": "noop: low cpu but high conns",
+    "resource": {
+      "apiVersion": "aws.platform.upbound.io/v1alpha1",
+      "kind": "SQLInstance",
+      "metadata": {
+        "name": "n3",
+        "namespace": "database-team"
+      },
+      "spec": {
+        "parameters": {
+          "instanceClass": "db.t3.medium",
+          "engine": "mariadb",
+          "engineVersion": "10.11",
+          "region": "us-west-2",
+          "storageGB": 5
+        }
+      },
+      "status": {
+        "observedInstanceClass": "db.t3.medium",
+        "observedInstanceStatus": "available",
+        "performanceMetrics": {
+          "metrics": {
+            "CPUUtilization": {
+              "value": 8,
+              "unit": "Percent"
+            },
+            "DatabaseConnections": {
+              "value": 90,
+              "unit": "Count"
+            },
+            "FreeableMemory": {
+              "value": 800000000,
+              "unit": "Bytes"
+            },
+            "FreeStorageSpace": {
+              "value": 2775404544,
+              "unit": "Bytes"
+            },
+            "ReadIOPS": {
+              "value": 40,
+              "unit": "Count/Second"
+            },
+            "WriteIOPS": {
+              "value": 20,
+              "unit": "Count/Second"
+            }
+          }
+        }
+      }
+    },
+    "expect": "noop"
+  },
+  {
+    "note": "scale down: all conditions",
+    "resource": {
+      "apiVersion": "aws.platform.upbound.io/v1alpha1",
+      "kind": "SQLInstance",
+      "metadata": {
+        "name": "d1",
+        "namespace": "database-team"
+      },
+      "spec": {
+        "parameters": {
+          "instanceClass": "db.t3.medium",
+          "engine": "mariadb",
+          "engineVersion": "10.11",
+          "region": "us-west-2",
+          "storageGB": 5
+        }
+      },
+      "status": {
+        "observedInstanceClass": "db.t3.medium",
+        "observedInstanceStatus": "available",
+        "performanceMetrics": {
+          "metrics": {
+            "CPUUtilization": {
+              "value": 6,
+              "unit": "Percent"
+            },
+            "DatabaseConnections": {
+              "value": 1,
+              "unit": "Count"
+            },
+            "FreeableMemory": {
+              "value": 800000000,
+              "unit": "Bytes"
+            },
+            "FreeStorageSpace": {
+              "value": 2775404544,
+              "unit": "Bytes"
+            },
+            "ReadIOPS": {
+              "value": 40,
+              "unit": "Count/Second"
+            },
+            "WriteIOPS": {
+              "value": 20,
+              "unit": "Count/Second"
+            }
+          }
+        }
+      }
+    },
+    "expect": "db.t3.small"
+  },
+  {
+    "note": "gate: no metrics",
+    "resource": {
+      "apiVersion": "aws.platform.upbound.io/v1alpha1",
+      "kind": "SQLInstance",
+      "metadata": {
+        "name": "m1",
+        "namespace": "database-team"
+      },
+      "spec": {
+        "parameters": {
+          "instanceClass": "db.t3.micro"
+        }
+      },
+      "status": {
+        "observedInstanceClass": "db.t3.micro",
+        "observedInstanceStatus": "available"
+      }
+    },
+    "expect": "noop"
+  }
+]
