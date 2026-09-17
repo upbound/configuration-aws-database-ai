@@ -1,10 +1,16 @@
 import models.io.upbound.awsm.rds.v1beta1 as rdsv1beta1
-import models.io.upbound.platform.aws.v1alpha1 as platformawsv1alpha1
 import models.io.k8s.api.core.v1 as corev1
 
 import base64
 
-oxr = platformawsv1alpha1.SQLInstance{**option("params").oxr} # observed composite resource
+# Untyped on purpose. Constructing the generated SQLInstance schema from the
+# observed XR fails once spec.crossplane.resourceRefs is populated - KCL will
+# not coerce a plain list of dicts into a list of typed schema items, so it
+# raises "expect [...SpecCrossplaneResourceRefsItems0], got list". A live XR
+# always has resourceRefs after its first reconcile, and passing
+# --observed-resources to `up composition render` reproduces it immediately.
+oxr = option("params").oxr # observed composite resource
+_dxr = option("params").dxr # desired composite resource
 ocds = option("params").ocds # observed composite resource
 oxrParams = oxr.spec.parameters
 
@@ -96,4 +102,24 @@ _items = [
             data: {}
     }
 ]
-items = _items
+
+# Surface what the RDS instance actually reports back onto the XR.
+#
+# The intelligent-scaling WatchOperation compares observedInstanceClass against
+# spec.parameters.instanceClass: while they differ, a requested change has not
+# landed yet and no new scaling decision is made. That is what replaces the
+# wall-clock cooldown the CronOperation used to carry in its prompt - a model
+# has no clock and cannot evaluate elapsed time, but it can compare two strings.
+#
+# observedInstanceStatus is the second gate, covering changes AWS makes that are
+# not class changes (backing-up, maintenance) and the window after a patch is
+# accepted but before the class itself flips.
+if "rds-instance" in ocds:
+    _dxr.status = {
+        observedInstanceClass = ocds["rds-instance"].Resource?.status?.atProvider?.instanceClass or ""
+        # atProvider.status, not instanceStatus - the RDS Instance schema calls
+        # the lifecycle field "status" ("The RDS instance status.").
+        observedInstanceStatus = ocds["rds-instance"].Resource?.status?.atProvider?.status or ""
+    }
+
+items = _items + [_dxr]

@@ -102,17 +102,20 @@ spec:
                   type: object
                   description: Performance metrics from CloudWatch for this RDS instance
                   x-kubernetes-preserve-unknown-fields: true
-                claudeDecision:
-                  type: object
-                  description: AI-driven scaling decision analysis from Claude
-                  properties:
-                    reasoning:
-                      type: string
-                      description: Detailed reasoning for the scaling decision
-                    timestamp:
-                      type: string
-                      format: date-time
-                      description: When the decision was made
-                  required:
-                  - reasoning
-                  - timestamp
+                observedInstanceClass:
+                  type: string
+                  description: >-
+                    The instance class the RDS instance actually reports, as
+                    opposed to the one requested in
+                    spec.parameters.instanceClass. The scaling analysis compares
+                    the two: while they differ, a change is still in flight and
+                    no new decision is made. This is what replaces a wall-clock
+                    cooldown, which an LLM cannot evaluate because it has no
+                    clock.
+                observedInstanceStatus:
+                  type: string
+                  description: >-
+                    The RDS instance's reported lifecycle status, e.g.
+                    "available", "modifying", "backing-up". A second gate on
+                    top of observedInstanceClass, covering changes AWS makes
+                    that are not a class change.

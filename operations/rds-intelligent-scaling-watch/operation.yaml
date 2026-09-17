@@ -1,0 +1,177 @@
+# Event-driven RDS scaling.
+#
+# This replaces a CronOperation that ran every minute. The schedule was never a
+# design choice - it was a rate limiter for hosted-model API spend, as was the
+# annotation-age arithmetic that used to sit in the prompt. Serving the model
+# ourselves removes the marginal cost per decision, which removes the reason for
+# both. A WatchOperation reacts to metric changes as they land instead of
+# sampling on a timer.
+#
+# Two properties of WatchOperation shape everything below:
+#
+#  1. Crossplane injects the watched resource into every pipeline step itself,
+#     as the "ops.crossplane.io/watched-resource" requirement with the exact
+#     name and namespace (internal/controller/ops/watched/reconciler.go,
+#     NewOperation). Do NOT declare requirements.requiredResources here: it is
+#     appended to, not replaced, and function-openai fails hard when that
+#     requirement resolves to anything other than exactly one resource
+#     ("too many resources sent to the function. expected 1").
+#
+# The prompt below is measured, not guessed. An earlier version demanded empty
+# output for a no-op and stated the rules without examples; it scored 0/9 on the
+# no-action cases at 0.5B, 1.5B AND 8B, over-scaling up to 75% of the time -
+# the failure that costs real money. Giving the model a legal way to say
+# "nothing needed" (restate the current class; an identical server-side apply
+# does not bump resourceVersion, so it stays a real no-write) plus four worked
+# examples took a 1.5B to 79% correct and 0% over-scaling.
+#
+# See tests/e2e-local/results/ for the raw numbers and COST.md for what they do
+# to the economics. Re-measure with tests/e2e-local/eval-model.sh before
+# changing anything below.
+#
+#  2. The generated Operation's name hashes the watched resource's
+#     resourceVersion, so one change produces exactly one Operation. The
+#     corollary is that *any* write re-triggers the watch. A decision that
+#     writes an annotation even when it changes nothing would loop forever.
+#     Hence the prompt's rule that no action means no output at all, and
+#     concurrencyPolicy: Forbid below.
+apiVersion: ops.crossplane.io/v1alpha1
+kind: WatchOperation
+metadata:
+  name: rds-intelligent-scaling
+  labels:
+    provider: aws
+    type: intelligent-scaling-watch
+    feature: self-hosted-reactive-scaling
+spec:
+  # Not the "Allow" default. Allow would let a burst of metric updates stack
+  # concurrent decisions on the same database and race each other's patches.
+  concurrencyPolicy: Forbid
+  successfulHistoryLimit: 3
+  failedHistoryLimit: 1
+
+  watch:
+    apiVersion: aws.platform.upbound.io/v1alpha1
+    kind: SQLInstance
+    # namespace deliberately omitted, so all namespaces are watched. The
+    # CronOperation this replaces pinned namespace: database-team, which
+    # silently excluded the postgres example in `default`.
+    matchLabels:
+      scale: me
+
+  operationTemplate:
+    spec:
+      mode: Pipeline
+      pipeline:
+      - step: decide
+        # solutions-function-openai, not upbound-function-openai: published
+        # upstream releases up to v0.3.9 cannot drive a self-hosted engine.
+        # See tests/e2e-local/results/function-openai-fixed-comparison.md.
+        functionRef:
+          name: solutions-function-openai
+        input:
+          apiVersion: openai.fn.upbound.io/v1alpha1
+          kind: Prompt
+          # No model or endpoint here: function-openai reads both from the
+          # credential Secret (OPENAI_BASE_URL, OPENAI_MODEL). See below.
+          systemPrompt: |
+            You are an RDS scaling controller. You read one SQLInstance resource and
+            reply with exactly one JSON object and nothing else.
+
+            You never write prose. You never use markdown fences. Your entire reply is
+            one line of JSON starting with { and ending with }.
+          userPrompt: |
+            Decide whether this SQLInstance needs a different instance class.
+
+            ## How to reply
+
+            Always reply with one line of JSON in this shape:
+
+            {"apiVersion":"aws.platform.upbound.io/v1alpha1","kind":"SQLInstance","metadata":{"name":"<name>","namespace":"<namespace>"},"spec":{"parameters":{"instanceClass":"<class>"}}}
+
+            Copy `name` and `namespace` verbatim from the resource. Never invent them.
+
+            - **No action needed**: set `instanceClass` to the class the resource ALREADY
+              has, and include no annotations. This writes nothing and is the correct
+              answer most of the time.
+            - **Action needed**: set `instanceClass` to the new class, and add an
+              annotation `intelligent-scaling/reasoning` with one short sentence.
+
+            ## When action is needed
+
+            Move exactly one step, and only when the resource is settled:
+
+                db.t3.micro -> db.t3.small -> db.t3.medium -> db.t3.large
+
+            Scale UP one step when `status.observedInstanceStatus` is "available" AND
+            `status.observedInstanceClass` equals `spec.parameters.instanceClass` AND any
+            of: CPUUtilization > 80, DatabaseConnections > 80% of the class limit,
+            FreeableMemory under 15% of class memory.
+
+            Scale DOWN one step only when those same two preconditions hold AND ALL of:
+            CPUUtilization < 20, DatabaseConnections < 30%, FreeableMemory above 60%.
+
+            ## No action, ever, when any of these is true
+
+            - `status.observedInstanceClass` differs from `spec.parameters.instanceClass`
+              (a change is already in flight - wait for it)
+            - `status.observedInstanceStatus` is not "available"
+            - either of those fields is missing or empty
+            - `status.performanceMetrics` is missing or empty
+            - the metrics are inside the thresholds above
+            - there is no step left in the direction indicated
+
+            Do not reason about elapsed time and do not look for timestamps. You have no
+            clock. Compare the two class strings.
+
+            ## Examples
+
+            Resource: instanceClass db.t3.micro, observedInstanceClass db.t3.micro,
+            observedInstanceStatus available, CPUUtilization 42.
+            Reply:
+            {"apiVersion":"aws.platform.upbound.io/v1alpha1","kind":"SQLInstance","metadata":{"name":"db-a","namespace":"team-x"},"spec":{"parameters":{"instanceClass":"db.t3.micro"}}}
+
+            Resource: instanceClass db.t3.small, observedInstanceClass db.t3.micro,
+            observedInstanceStatus available, CPUUtilization 97.
+            Reply:
+            {"apiVersion":"aws.platform.upbound.io/v1alpha1","kind":"SQLInstance","metadata":{"name":"db-b","namespace":"team-x"},"spec":{"parameters":{"instanceClass":"db.t3.small"}}}
+
+            Resource: instanceClass db.t3.medium, observedInstanceClass db.t3.medium,
+            observedInstanceStatus modifying, CPUUtilization 91.
+            Reply:
+            {"apiVersion":"aws.platform.upbound.io/v1alpha1","kind":"SQLInstance","metadata":{"name":"db-c","namespace":"team-y"},"spec":{"parameters":{"instanceClass":"db.t3.medium"}}}
+
+            Resource: instanceClass db.t3.micro, observedInstanceClass db.t3.micro,
+            observedInstanceStatus available, CPUUtilization 93.
+            Reply:
+            {"apiVersion":"aws.platform.upbound.io/v1alpha1","kind":"SQLInstance","metadata":{"name":"db-d","namespace":"team-y","annotations":{"intelligent-scaling/reasoning":"CPU 93% sustained above 80%"}},"spec":{"parameters":{"instanceClass":"db.t3.small"}}}
+
+            ## The resource
+
+            {{ .Resources }}
+        credentials:
+        # The credential name "gpt" and the key OPENAI_API_KEY are compiled into
+        # function-openai. The Secret also carries the endpoint and model, which
+        # is why neither appears in the input above:
+        #
+        #   kubectl -n crossplane-system create secret generic gpt \
+        #     --from-literal=OPENAI_API_KEY=not-used-by-vllm \
+        #     --from-literal=OPENAI_BASE_URL="$(kubectl get ms qwen3-8b -n ml-team \
+        #        -o jsonpath='{.status.address}')/v1" \
+        #     --from-literal=OPENAI_MODEL=qwen
+        #
+        # OPENAI_API_KEY is required but unchecked by vLLM, so any non-empty
+        # value works. OPENAI_MODEL must match the engine's
+        # --served-model-name. OPENAI_BASE_URL defaults to api.openai.com and
+        # OPENAI_MODEL to gpt-4, so a missing or misspelled key sends these
+        # decisions to OpenAI rather than failing - worth checking first if
+        # something looks wrong.
+        #
+        # Because the endpoint lives in the Secret, pointing this at any other
+        # OpenAI-compatible provider is a Secret edit, with no manifest change.
+        - name: gpt
+          source: Secret
+          secretRef:
+            namespace: crossplane-system
+            name: gpt
+      retryLimit: 3

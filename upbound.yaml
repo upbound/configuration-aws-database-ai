@@ -11,7 +11,11 @@ spec:
   - apiVersion: pkg.crossplane.io/v1
     kind: Provider
     package: xpkg.upbound.io/upbound/provider-aws-rds
-    version: v2
+    version: v2.6.0
+  - apiVersion: pkg.crossplane.io/v1
+    kind: Provider
+    package: xpkg.upbound.io/upbound/provider-aws-ec2
+    version: v2.6.0
   - apiVersion: pkg.crossplane.io/v1
     kind: Configuration
     package: xpkg.upbound.io/upbound/configuration-aws-network
@@ -22,29 +26,31 @@ spec:
     version: '>=v0.0.0'
   - apiVersion: pkg.crossplane.io/v1
     kind: Function
-    package: xpkg.upbound.io/upbound/function-claude
-    version: v0.4.0
+    package: xpkg.upbound.io/solutions/function-openai
+    version: v0.3.9-selfhosted-fixes-2
   - apiVersion: pkg.crossplane.io/v1beta1
     kind: Function
     package: xpkg.upbound.io/upbound/function-rds-metrics
     version: v0.0.7
   description: AI-powered Crossplane configuration for AWS RDS with intelligent scaling.
-    Automatically analyzes CloudWatch metrics and makes data-driven scaling decisions
-    using Claude AI. Includes Crossplane Operations for scheduled scaling with full
-    audit trails and rate limiting.
+    Analyzes CloudWatch metrics and makes data-driven scaling decisions using a model
+    you host yourself on a Modelplane inference cluster, reached over an OpenAI/Anthropic-compatible
+    endpoint. Event-driven via Crossplane Operations, with full audit trails.
   license: Apache-2.0
   maintainer: Upbound <support@upbound.io>
   readme: |
-    This configuration provides **AI-powered intelligent scaling** for AWS RDS databases using Crossplane. It combines deterministic Crossplane control plane reconciliation with automated scaling decisions powered by Claude AI.
+    This configuration provides **AI-powered intelligent scaling** for AWS RDS databases using Crossplane, with the scaling model **hosted on your own infrastructure** rather than called as a SaaS API.
 
     **Key Features**:
-    - **Intelligent Scaling**: AI analyzes CloudWatch metrics (CPU, memory, IOPS, connections) to make scaling decisions
-    - **Crossplane Operations**: Scheduled scaling via CronOperation with configurable intervals and cooldown periods
-    - **Full Audit Trail**: All scaling decisions captured in resource annotations with complete reasoning
+    - **Self-hosted inference**: a Modelplane inference cluster serves Qwen3-8B on a single NVIDIA L4. vLLM exposes the Anthropic Messages API, so the same composition function talks to it by setting one field.
+    - **Event-driven**: a WatchOperation reacts to metric changes instead of polling on a schedule. The old cron schedule was a rate limiter for API spend; self-hosting removes the reason for it, so responsiveness stops costing money.
+    - **Clock-free convergence**: scaling thrash is prevented by comparing the RDS instance's observed class against the requested one, not by a wall-clock cooldown a language model cannot evaluate.
+    - **Full Audit Trail**: scaling decisions captured in resource annotations with reasoning
     - **Multi-Engine Support**: PostgreSQL and MariaDB with configurable versions and instance classes
-    - **Cost-Effective**: Highly efficient AI model reduces operational costs while maintaining performance
 
-    **Pipeline**: `RDS Instance → CloudWatch Metrics → Metrics Collection → AI Analysis → Scaling Actions`
+    **Pipeline**: `RDS → CloudWatch → XR status → WatchOperation → self-hosted model → patch`
+
+    The economics are documented with their assumptions and estimates labelled in COST.md. In short: at the cadence a scaling controller actually wants, hosted frontier inference is out of reach at any fleet size.
 
     For detailed setup, performance testing scripts, and customization options, visit [the GitHub repository](https://github.com/upbound/configuration-aws-database-ai).
   repository: xpkg.upbound.io/upbound/configuration-aws-database-ai

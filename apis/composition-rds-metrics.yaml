@@ -21,6 +21,10 @@ spec:
       apiVersion: rdsmetrics.fn.crossplane.io/v1beta1
       kind: Input
       databaseNameRef: "xr.metadata.name"
+      # Static, and must match spec.parameters.region on every SQLInstance this
+      # composition serves. databaseNameRef suggests the function supports an
+      # "xr."-prefixed reference form, but region taking one is unverified -
+      # check function-rds-metrics' Input schema before changing this to a ref.
       region: "us-west-2"
       metrics:
       - "CPUUtilization"
@@ -32,11 +36,11 @@ spec:
       period: 300
       target: "status.performanceMetrics"
     credentials:
-      - name: aws-creds
-        source: Secret
-        secretRef:
-          namespace: crossplane-system
-          name: aws-creds
+    - name: aws-creds
+      source: Secret
+      secretRef:
+        namespace: crossplane-system
+        name: aws-creds
   - step: crossplane-contrib-function-auto-ready
     functionRef:
       name: crossplane-contrib-function-auto-ready
