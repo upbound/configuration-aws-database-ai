@@ -3,6 +3,14 @@
 Raw output from `tests/e2e-local/eval-model.sh`, kept so the claims in
 [`COST.md`](../../COST.md) are checkable rather than asserted.
 
+> **Read [`aws-cloud-run.md`](aws-cloud-run.md) before trusting the scores
+> below.** Against a real RDS instance and real CloudWatch data, the model that
+> scores 79% / 0% over-scaled here triggered a billable resize with no
+> up-condition met. The scores are not wrong, but their inputs were too kind:
+> the synthetic cases sit comfortably inside every threshold, and the one rule
+> that needs knowledge the prompt does not supply - FreeableMemory as a
+> percentage of *class* memory - is never probed near its boundary.
+
 | Model | Prompt | Correct | Over-scaled | Missed | Verdict |
 |---|---|---|---|---|---|
 | Qwen2.5-0.5B-Q4 | deployed | 0/24 (0%) | 38% | 0 | not suitable |

@@ -249,6 +249,55 @@ is event-driven, not scheduled: the WatchOperation fires on any change to a
 
 ## Critical Implementation Notes
 
+### UNFIXED: it over-scaled a real database, with no threshold met
+
+Measured against real AWS, not synthetic data. See
+`tests/e2e-local/results/aws-cloud-run.md`.
+
+A real RDS `db.t3.micro` at **CPU 29.67%, 0 connections, 205 MiB freeable
+(20.0% of the class's 1 GiB)** was scaled to `db.t3.small`. None of the
+prompt's up-conditions were met - the thresholds are CPU > 80, connections >
+80%, freeable < 15%. Crossplane applied the patch and **AWS really resized the
+instance**. The same resource also got two `db.t3.micro` decisions, so it is
+unstable, and the patches carried no `intelligent-scaling/reasoning`
+annotation, which the prompt requires for an action - so the audit trail is
+empty for the one event that needed it.
+
+The offline eval scores this model 79% correct / 0% over-scaled. That is not
+wrong, it is measured on inputs that are too kind: the synthetic cases use
+`FreeableMemory: 800000000` (~75% of a micro), comfortably clear of the 15%
+boundary.
+
+**The likely root cause is a rule the prompt cannot support.** "FreeableMemory
+under 15% of class memory" requires the class-to-memory mapping - that
+`db.t3.micro` is 1 GiB - and nothing in the prompt provides it. The model must
+recall AWS instance specs and then divide. 205 MiB reads low in absolute terms.
+
+Do not run this unattended against real databases yet. The fixes it argues for,
+in order:
+
+1. Have the composition compute `freeableMemoryPercent` and
+   `connectionsPercent` into `status.performanceMetrics`, so the model compares
+   two numbers rather than recalling hardware specs.
+2. Gate the patch on a deterministic threshold check. The model is useful for
+   judgement; it should not be the only thing between a metric and a billable
+   resize.
+3. Reject a scale-up that carries no reasoning annotation.
+4. Add near-threshold cases to `tests/scale/cases.json`, derived from a real XR.
+
+### `concurrencyPolicy: Forbid` does not bound concurrency per resource
+
+Also measured on the real run. Three Operations targeting the *same*
+SQLInstance ran simultaneously - RDS going available, metrics landing and the
+gates populating each spawned one. They oversubscribed the engine's shared KV
+cache and wedged in `PipelineRunning` for 8+ minutes producing nothing.
+
+Engine sizing is the other half: `n_slots = 4, n_ctx_slot = 8192,
+kv_unified = true` is one 8,192-token cache across four slots, and a real XR
+renders to ~3,200 prompt tokens (vs ~2,710 synthetic), so three concurrent
+requests need ~9,600. `platform/cpu-fleet/` now sets `--ctx-size 16384`; the
+same Operations then completed.
+
 ### The model can patch the wrong resource (guarded since v0.3.9-selfhosted-fixes-2)
 
 Measured on the live rig, not theoretical. Under concurrent load the model

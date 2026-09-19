@@ -45,8 +45,20 @@ spec:
                 - "0.0.0.0"
                 - "--port"
                 - "8000"
+                # The KV cache is SHARED across slots (kv_unified=true), and
+                # llama.cpp starts 4 slots by default. A real SQLInstance -
+                # with six CloudWatch metrics and atProvider state - renders to
+                # ~3,200 prompt tokens, so 4 concurrent Operations need ~12,800.
+                # At 8192 they oversubscribe it: requests wedge in
+                # PipelineRunning for minutes and llama.cpp returns
+                #   500 Context size has been exceeded
+                # Worse, under that pressure the model starts copying a
+                # few-shot example's name/namespace instead of the watched
+                # resource - measured 5 of 8 Operations at 8-way concurrency.
+                # function-openai's identity guard refuses those, but the
+                # engine must be sized so it does not happen.
                 - "--ctx-size"
-                - "8192"
+                - "16384"
                 - "--jinja"
                 - "--temp"
                 - "0"
