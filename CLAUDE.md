@@ -330,10 +330,22 @@ rate. Pair the model with a deterministic threshold check.
   the token: `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`. The name `gpt`
   and the key `OPENAI_API_KEY` are compiled into function-openai. There is no
   `claude` Secret any more.
-- AWS credentials required in `crossplane-system/aws-creds` for
-  function-rds-metrics, key `credentials`, in AWS credentials-file format. The
-  same Secret backs `examples/clusterproviderconfig-aws-static.yaml`. SSO
-  credentials are temporary - a long run outlives them and fails with auth
+- AWS credentials are needed in **two** namespaces, key `credentials`, in AWS
+  credentials-file format:
+  - `crossplane-system/aws-creds` - read by function-rds-metrics, and by
+    `examples/clusterproviderconfig-aws-static.yaml`
+  - `<XR namespace>/aws-creds` - read by
+    `examples/providerconfig-aws-static.yaml`
+
+  **Both ProviderConfig kinds are required.** configuration-aws-network
+  composes its managed resources with `providerConfigRef.kind: ProviderConfig`
+  (namespaced), so a `ClusterProviderConfig` alone leaves every composed
+  resource with *no status conditions at all* - not an error, just silence,
+  because no provider claims them. Diagnose with
+  `kubectl get managed -n <ns> -o wide`: empty SYNCED/READY columns mean the
+  ProviderConfig kind or namespace does not match, not that AWS is slow.
+
+  SSO credentials are temporary - a long run outlives them and fails with auth
   errors that read like provider bugs.
 
 ### AWS managed resources must be explicitly activated alongside Modelplane

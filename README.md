@@ -685,10 +685,21 @@ Three things are needed before a real `SQLInstance` can reconcile, and the
 third fails silently:
 
 ```bash
-# 1. AWS credentials, for both the provider and function-rds-metrics.
+# 1. AWS credentials. The Secret is needed in TWO namespaces, for two
+#    different consumers, and the second is easy to miss:
+#      crossplane-system - read by function-rds-metrics
+#      <your XR namespace> - read by the namespaced ProviderConfig
 kubectl -n crossplane-system create secret generic aws-creds \
   --from-file=credentials="$HOME/.aws/credentials"
+kubectl -n database-team create secret generic aws-creds \
+  --from-file=credentials="$HOME/.aws/credentials"
+
+#    Both ProviderConfig kinds are needed. configuration-aws-network composes
+#    managed resources with `kind: ProviderConfig` (namespaced), so a
+#    ClusterProviderConfig alone leaves them with NO status conditions at all -
+#    not an error, just silence, because nothing claims them.
 kubectl apply -f examples/clusterproviderconfig-aws-static.yaml
+kubectl apply -f examples/providerconfig-aws-static.yaml
 
 # 2. ACTIVATE THE AWS MANAGED RESOURCES. Required on any control plane hosting
 #    Modelplane. Crossplane there runs with defaultActivations=[], which is
