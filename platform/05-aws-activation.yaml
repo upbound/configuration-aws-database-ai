@@ -1,0 +1,41 @@
+# Activate the AWS managed resources this configuration composes.
+#
+# REQUIRED on any control plane that hosts Modelplane, and easy to miss.
+# Modelplane's ManagedResourceActivationPolicy only works if Crossplane was
+# installed with
+#   --set-json 'provider.defaultActivations=[]'
+# (see 00-prerequisites.yaml), and that setting is global: with default
+# activations cleared, NOTHING is active except what an activation policy names.
+# Modelplane's own policy activates only releases.helm and objects.kubernetes,
+# so the AWS resources this configuration needs stay Inactive and the
+# SQLInstance composition silently has no CRDs to compose against.
+#
+# Symptom if this is missing: `kubectl api-resources --api-group
+# rds.aws.m.upbound.io` returns nothing, and a SQLInstance never produces a
+# SubnetGroup or Instance.
+#
+# Not needed on a control plane WITHOUT Modelplane - Crossplane's default
+# activations cover everything there.
+#
+# Apply AFTER the AWS providers are installed (i.e. after `up project run`),
+# since an activation policy can only activate definitions that exist.
+#
+# The RDS entries are named exactly, because this configuration composes
+# exactly two. The ec2 group is a wildcard on purpose:
+# configuration-aws-network composes its resources from an embedded function,
+# so the set is generated at runtime rather than declared in its Composition
+# and cannot be enumerated here - and it changes between versions of that
+# configuration. ~200 ec2 definitions is still far less work for the control
+# plane than the ~994 that default activations would bring up.
+apiVersion: apiextensions.crossplane.io/v1alpha1
+kind: ManagedResourceActivationPolicy
+metadata:
+  name: aws-database-ai
+spec:
+  activate:
+    # Composed by functions/sqlinstance/main.k
+    - subnetgroups.rds.aws.m.upbound.io
+    - instances.rds.aws.m.upbound.io
+    # Composed by configuration-aws-network (VPC, subnets, security groups,
+    # gateways, route tables).
+    - "*.ec2.aws.m.upbound.io"

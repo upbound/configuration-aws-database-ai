@@ -330,4 +330,32 @@ rate. Pair the model with a deterministic threshold check.
   the token: `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`. The name `gpt`
   and the key `OPENAI_API_KEY` are compiled into function-openai. There is no
   `claude` Secret any more.
-- AWS credentials required in `crossplane-system/aws-creds` for function-rds-metrics
+- AWS credentials required in `crossplane-system/aws-creds` for
+  function-rds-metrics, key `credentials`, in AWS credentials-file format. The
+  same Secret backs `examples/clusterproviderconfig-aws-static.yaml`. SSO
+  credentials are temporary - a long run outlives them and fails with auth
+  errors that read like provider bugs.
+
+### AWS managed resources must be explicitly activated alongside Modelplane
+
+`platform/05-aws-activation.yaml`, and it fails silently if forgotten.
+
+Modelplane requires Crossplane installed with
+`--set-json 'provider.defaultActivations=[]'`. That setting is **global**: with
+default activations cleared, no managed resource is active except what a
+`ManagedResourceActivationPolicy` names, and Modelplane's own policy names only
+`releases.helm.m.crossplane.io` and `objects.kubernetes.m.crossplane.io`. All
+994 AWS definitions stay Inactive, their CRDs never appear, and the SQLInstance
+composition has nothing to compose against - with no error saying so.
+
+Check with `kubectl api-resources --api-group rds.aws.m.upbound.io`; empty
+output means the policy is missing or has not reconciled.
+
+The policy names the two RDS definitions exactly and wildcards
+`*.ec2.aws.m.upbound.io`, because configuration-aws-network composes its
+resources from an embedded function - the set is generated at runtime, not
+declared in its Composition, so it cannot be enumerated. That activates ~104
+ec2 definitions rather than all 994.
+
+Not needed without Modelplane: Crossplane's default activations cover
+everything there. This is a cost of co-hosting the two, not of either alone.

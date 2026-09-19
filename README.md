@@ -681,6 +681,42 @@ Apply `platform/` as written and use real `SQLInstance`s. See
 [`tests/scale/`](/tests/scale/) become meaningful, and only here can
 [`COST.md`](/COST.md)'s throughput estimates be replaced with measurements.
 
+Three things are needed before a real `SQLInstance` can reconcile, and the
+third fails silently:
+
+```bash
+# 1. AWS credentials, for both the provider and function-rds-metrics.
+kubectl -n crossplane-system create secret generic aws-creds \
+  --from-file=credentials="$HOME/.aws/credentials"
+kubectl apply -f examples/clusterproviderconfig-aws-static.yaml
+
+# 2. ACTIVATE THE AWS MANAGED RESOURCES. Required on any control plane hosting
+#    Modelplane. Crossplane there runs with defaultActivations=[], which is
+#    global, so nothing is active except what an activation policy names - and
+#    Modelplane's own policy names only Helm and Kubernetes resources.
+kubectl apply -f platform/05-aws-activation.yaml
+
+#    Verify, because the failure mode is silence rather than an error:
+kubectl api-resources --api-group rds.aws.m.upbound.io   # must list instances
+
+# 3. A network for networkRef.id to select.
+kubectl apply -f examples/ns-database-team.yaml
+kubectl apply -f examples/network-rds-metrics.yaml
+```
+
+Confirm the credentials actually reach AWS before provisioning anything. An
+observe-only resource forces a real API call and creates nothing - "external
+resource does not exist" is the *success* case here, since it means the call
+was made and authenticated:
+
+```bash
+kubectl get instance.rds.aws.m.upbound.io -A \
+  -o custom-columns=NAME:.metadata.name,SYNCED:.status.conditions[?\(@.type==\"Synced\"\)].message
+```
+
+Note that SSO credentials are temporary. A run longer than their lifetime will
+start failing mid-way with auth errors that look like provider bugs.
+
 ```bash
 # Stress a real database and watch it react
 # (see Performance Testing below for the scripts)
