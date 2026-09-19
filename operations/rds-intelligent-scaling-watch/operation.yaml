@@ -103,13 +103,16 @@ spec:
 
                 db.t3.micro -> db.t3.small -> db.t3.medium -> db.t3.large
 
+            All thresholds are percentages, read directly from
+            `status.scalingSignals`: cpuPercent, freeableMemoryPercent,
+            connectionsPercent. Never compute them yourself from raw bytes.
+
             Scale UP one step when `status.observedInstanceStatus` is "available" AND
             `status.observedInstanceClass` equals `spec.parameters.instanceClass` AND any
-            of: CPUUtilization > 80, DatabaseConnections > 80% of the class limit,
-            FreeableMemory under 15% of class memory.
+            of: cpuPercent > 80, connectionsPercent > 80, freeableMemoryPercent < 15.
 
             Scale DOWN one step only when those same two preconditions hold AND ALL of:
-            CPUUtilization < 20, DatabaseConnections < 30%, FreeableMemory above 60%.
+            cpuPercent < 20, connectionsPercent < 30, freeableMemoryPercent > 60.
 
             ## No action, ever, when any of these is true
 
@@ -117,8 +120,9 @@ spec:
               (a change is already in flight - wait for it)
             - `status.observedInstanceStatus` is not "available"
             - either of those fields is missing or empty
-            - `status.performanceMetrics` is missing or empty
-            - the metrics are inside the thresholds above
+            - `status.scalingSignals` is missing, or the specific percentage a rule
+              needs is absent from it (absent means unknown, never zero)
+            - every percentage is inside the thresholds above
             - there is no step left in the direction indicated
 
             Do not reason about elapsed time and do not look for timestamps. You have no

@@ -1,0 +1,39 @@
+# A settled db.t3.micro genuinely under load: CPU 95%, memory comfortable.
+#
+# The opposite of xr-aws-overscale-case.yaml. Rendering this must produce
+# status.recommendedInstanceClass: db.t3.small - the deterministic rules saying
+# "yes, scale up" - so the recommendation is not simply biased toward no-op.
+apiVersion: aws.platform.upbound.io/v1alpha1
+kind: SQLInstance
+metadata:
+  name: rds-metrics-database-ai-mysql
+  namespace: database-team
+  labels:
+    scale: me
+spec:
+  parameters:
+    region: us-west-2
+    engine: mariadb
+    engineVersion: "10.11"
+    storageGB: 5
+    instanceClass: db.t3.micro
+    autoGeneratePassword: true
+    passwordSecretRef:
+      name: mariadbsecret
+      key: password
+    networkRef:
+      id: rds-metrics-database-ai-scale
+status:
+  observedInstanceClass: db.t3.micro
+  observedInstanceStatus: available
+  performanceMetrics:
+    metrics:
+      CPUUtilization:
+        value: 95
+        unit: Percent
+      DatabaseConnections:
+        value: 0
+        unit: Count
+      FreeableMemory:
+        value: 800000000
+        unit: Bytes

@@ -1,0 +1,38 @@
+endpoint: http://localhost:18081/ml-team/scaler-incumbent-85e8e/v1
+model:    qwen
+repeats:  2 per case (temperature 0, so variance means instability)
+
+prompt:   tests/e2e-local/../../operations/rds-intelligent-scaling-watch/operation.yaml
+          system=253ch user=3835ch
+
+case                               expected       got                            verdict
+gate: change already in flight     noop           noop-explicit,scale            OVER-SCALED,correct  (unstable)
+gate: instance modifying           noop           scale,scale                    OVER-SCALED
+gate: observed fields empty        noop           noop-explicit,noop-explicit    correct
+gate: at largest, wants up         noop           noop-explicit,noop-explicit    correct
+gate: at smallest, wants down      noop           scale,scale                    OVER-SCALED
+scale up: cpu 95                   db.t3.small    scale,scale                    correct
+scale up: cpu 81 (just over)       db.t3.medium   noop-explicit,noop-explicit    missed
+noop: cpu 79 (just under)          noop           noop-explicit,noop-explicit    correct
+noop: cpu 45 mid-range             noop           noop-explicit,noop-explicit    correct
+noop: low cpu but high conns       noop           noop-explicit,noop-explicit    correct
+scale down: all conditions         db.t3.small    noop-explicit,noop-explicit    missed
+gate: no metrics                   noop           noop-explicit,noop-explicit    correct
+regression: real AWS over-scale (  noop           noop-explicit,noop-explicit    correct
+scale up: memory 14% (just under   db.t3.small    noop-explicit,noop-explicit    missed
+noop: memory 16% (just over 15)    noop           noop-explicit,noop-explicit    correct
+gate: 12% memory on db.t3.large,   noop           noop-explicit,noop-explicit    correct
+scale up: 70 connections = 82% of  db.t3.small    noop-explicit,noop-explicit    missed
+noop: 70 connections = 41% of a s  noop           noop-explicit,noop-explicit    correct
+
+verdicts:
+  correct         23  (64%)
+  missed           8  (22%)
+  OVER-SCALED      5  (14%)
+
+CORRECT DECISIONS: 23/36 = 64%
+  OVER-SCALED 5 times - this is the expensive failure. It scales a database that did not need it.
+  1/18 cases differed across repeats at temperature 0
+
+Verdict on this model for the acceptance demo:
+  NOT SUITABLE - over-scales 14% of the time, which costs money and inverts the cost argument.

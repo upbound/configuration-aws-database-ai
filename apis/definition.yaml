@@ -119,3 +119,48 @@ spec:
                     "available", "modifying", "backing-up". A second gate on
                     top of observedInstanceClass, covering changes AWS makes
                     that are not a class change.
+                recommendedInstanceClass:
+                  type: string
+                  description: >-
+                    The instance class the documented thresholds imply, computed
+                    by the embedded function from scalingSignals and the
+                    convergence gates. Every rule involved is arithmetic and
+                    string comparison, so this needs no model - and a real run
+                    showed a 1.5B getting it wrong in the expensive direction.
+                    Published so a model's output can be checked against it, and
+                    so anything that wants to enforce rather than suggest has
+                    something to enforce. Equals observedInstanceClass when no
+                    change is warranted. Nothing consumes it yet.
+                scalingSignals:
+                  type: object
+                  description: >-
+                    CloudWatch metrics expressed as percentages of the observed
+                    instance class's capacity, which is the form the scaling
+                    rules are written in. Computed by the embedded function, not
+                    by the model. A real run scaled a database that needed
+                    nothing because "FreeableMemory under 15% of class memory"
+                    silently required the model to know db.t3.micro is 1 GiB and
+                    divide; at 205 MiB free - 20.0%, above the threshold - it
+                    read the absolute number as low. These fields turn that into
+                    a comparison of two numbers. Absent for an instance class
+                    the function has no capacity table for, so a missing value
+                    means "unknown", never "zero".
+                  properties:
+                    cpuPercent:
+                      type: number
+                      description: CPUUtilization, already a percentage; copied through for symmetry.
+                    freeableMemoryPercent:
+                      type: number
+                      description: FreeableMemory as a percentage of the class's memory.
+                    connectionsPercent:
+                      type: number
+                      description: >-
+                        DatabaseConnections as a percentage of the class's
+                        default max_connections, which MySQL and MariaDB derive
+                        as {DBInstanceClassMemory/12582880}.
+                    classMemoryBytes:
+                      type: integer
+                      description: The observed class's memory, for auditing the percentage above.
+                    classMaxConnections:
+                      type: integer
+                      description: The observed class's default max_connections, likewise.

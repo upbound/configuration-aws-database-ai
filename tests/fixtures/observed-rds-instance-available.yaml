@@ -1,0 +1,34 @@
+# The same observed RDS Instance as observed-rds-instance.yaml, but reporting
+# status "available" and class db.t3.micro - the state the real AWS run was in
+# when it wrongly scaled up.
+#
+# Pair it with xr-aws-overscale-case.yaml to verify the computed
+# status.scalingSignals, which is what makes that decision answerable without
+# the model having to recall AWS hardware specs:
+#
+#   up composition render --xrd=apis/definition.yaml \
+#     apis/composition-rds-metrics.yaml \
+#     tests/fixtures/xr-aws-overscale-case.yaml \
+#     --function-credentials=tests/test-credentials.yaml \
+#     --observed-resources=tests/fixtures/observed-rds-instance-available.yaml
+apiVersion: rds.aws.m.upbound.io/v1beta1
+kind: Instance
+metadata:
+  name: rds-metrics-database-ai-mysql-b5bf059ef421
+  namespace: database-team
+  annotations:
+    crossplane.io/composition-resource-name: rds-instance
+  labels:
+    crossplane.io/composite: rds-metrics-database-ai-mysql
+spec:
+  forProvider:
+    region: us-west-2
+    instanceClass: db.t3.micro
+    username: masteruser
+status:
+  atProvider:
+    instanceClass: db.t3.micro
+    status: available
+    endpoint: rds-metrics-database-ai-mysql.abc.us-west-2.rds.amazonaws.com:3306
+    address: rds-metrics-database-ai-mysql.abc.us-west-2.rds.amazonaws.com
+    port: 3306
