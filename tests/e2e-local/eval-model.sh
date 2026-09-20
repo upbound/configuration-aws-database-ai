@@ -44,7 +44,7 @@ BASE="$BASE" MODEL="$MODEL" REPEATS="$REPEATS" \
 CASES="$(cat "$(dirname "$0")/../scale/cases.json")" \
 PROMPT_SRC="$PROMPT_FILE" \
 python3 - <<'PY'
-import json, os, re, urllib.request, collections
+import collections, http.client, json, os, re, time, urllib.error, urllib.request
 
 base, model, repeats = os.environ["BASE"].rstrip("/"), os.environ["MODEL"], int(os.environ["REPEATS"])
 cases = json.loads(os.environ["CASES"])
@@ -83,9 +83,24 @@ def ask(resource):
     }).encode()
     req = urllib.request.Request(f"{base}/chat/completions", data=body, headers={
         "content-type": "application/json", "authorization": "Bearer not-used"})
-    with urllib.request.urlopen(req, timeout=300) as r:
-        d = json.load(r)
-    return ((d.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+
+    # Retry transient transport failures. CPU inference takes ~80s per request,
+    # and anything proxying the endpoint - kubectl port-forward especially -
+    # drops connections over a run this long. Without this the whole eval dies
+    # partway through with RemoteDisconnected and reports nothing, which is a
+    # lost hour rather than a lost request. Only transport errors are retried;
+    # an HTTP error from the engine is a real answer and must not be masked.
+    last = None
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(req, timeout=300) as r:
+                d = json.load(r)
+            return ((d.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+        except (urllib.error.URLError, http.client.HTTPException, ConnectionError) as e:
+            last = e
+            if attempt < 3:
+                time.sleep(2 * (attempt + 1))
+    raise RuntimeError(f"endpoint unreachable after 4 attempts: {last}")
 
 def classify(text, res):
     """What did the model actually produce?"""

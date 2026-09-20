@@ -28,6 +28,49 @@ paths (raw output: [`v040-incumbent-direct.txt`](v040-incumbent-direct.txt),
 | incumbent direct, via `ModelEndpoint` | **19/24 (79%)** | **0%** | 0 | 1/12 |
 | 90/10 canary, via `ModelService` | 18/24 (75%) | **0%** | 1 | 2/12 |
 
+### Then the percentages moved into the composition, and it got worse
+
+`aws-cloud-run.md` argued that the memory rule was unsupportable: "FreeableMemory
+under 15% of class memory" needs the class-to-memory mapping the prompt never
+supplies. The composition now computes the percentages
+(`status.scalingSignals`), and the prompt compares those numbers instead.
+
+That fixed the production failure and broke the gates.
+
+| Prompt | user chars | Correct | Over-scaled | Raw |
+|---|---|---|---|---|
+| raw metrics (v2-fewshot) | 3,163 | **79%** | **0%** | [`qwen2.5-1.5b-q4-improved-prompt.txt`](qwen2.5-1.5b-q4-improved-prompt.txt) |
+| percentages, verbose | 3,835 | 64% | 14% | [`v2-percentages-verbose.txt`](v2-percentages-verbose.txt) |
+| percentages, trimmed | 3,383 | 67% | 11% | [`v3-percentages-trimmed.txt`](v3-percentages-trimmed.txt) |
+
+The real-AWS regression case passes in every percentage run, so the specific
+production bug is fixed. But `gate: change already in flight` and `gate:
+instance modifying` now OVER-SCALE - the two gates that stop a resize being
+re-triggered while the last one is still landing. They were perfect before.
+Genuine scale-ups are missed 4 times out of 5.
+
+Trimming the prompt from 3,835 to 3,383 chars recovered 3 points and halved the
+over-scale rate, so length is a contributing factor. It is not the cause: at
+3,383 chars the gates still fail, and they held at 3,163.
+
+**The conclusion this forces.** Every rule in this decision is arithmetic and
+string comparison - is the resource settled, is a percentage past a line, does a
+step exist in that direction. `status.recommendedInstanceClass` computes it in
+the composition and is right by construction; the 1.5B is right 67% of the time
+and wrong in the expensive direction on the gates that matter most. A model is
+not the right instrument for this particular decision, however well it serves
+as a demonstration of Modelplane.
+
+That does not make the model useless here - writing the human-readable
+`intelligent-scaling/reasoning` annotation is a genuine language task, and the
+one the model is actually good at. It makes it the wrong thing to put in the
+decision path.
+
+(The KCL itself was verified on three representative inputs - the real
+over-scale case, a settled micro at CPU 95, and CPU 95 on a "modifying"
+instance. `tests/scale/validate-cases.py`, an independent implementation of the
+same rules, agrees with all 18 case expectations.)
+
 Two results here, and the first matters more than the second.
 
 **Modelplane's routing costs nothing measurable.** The direct run reproduced the
